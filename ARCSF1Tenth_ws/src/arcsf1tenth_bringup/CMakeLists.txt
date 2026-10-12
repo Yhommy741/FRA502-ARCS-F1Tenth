@@ -47,10 +47,10 @@ install(TARGETS
 
 ################ INSTALL LAUNCH, ETC #################
 install(DIRECTORY
-  # add directories here
-  DESTINATION share/${PROJECT_NAME})
   config
   urdf
   launch
+  DESTINATION share/${PROJECT_NAME}
+)
 
 ament_package()
