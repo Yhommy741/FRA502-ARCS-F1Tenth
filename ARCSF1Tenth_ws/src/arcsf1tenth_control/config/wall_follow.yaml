@@ -1,0 +1,22 @@
+# PID wall follower (wall_follow.py). Vehicle limits come from
+# arcsf1tenth_description/config/vehicle.yaml.
+wall_follow:
+  ros__parameters:
+    side: left                  # wall to follow: left | right
+    desired_distance: 1.0       # [m] distance to keep from the wall
+    lookahead: 0.6              # [m] predict the wall distance this far ahead (more = smoother, cuts corners)
+    beam_angle: 0.7854          # [rad] angle between the perpendicular beam and the forward beam (45 deg)
+    beam_window: 0.035          # [rad] median over +-2 deg around each beam
+
+    # PID on (predicted distance - desired_distance) -> steering angle
+    kp: 1.0                     # [rad/m]
+    ki: 0.0                     # [rad/(m s)]
+    kd: 0.15                    # [rad s/m]
+    integral_limit: 0.5         # [m s]
+
+    # Speed: speed_max on straights, down to speed_min at full lock or near an obstacle
+    speed_max: 0.8              # [m/s] (capped at vehicle max_speed)
+    speed_min: 0.4              # [m/s]
+    front_slow_distance: 3.0    # [m] start slowing when the free distance ahead is below this
+    front_stop_distance: 0.4    # [m] stop when something is this close ahead
+    front_half_angle: 0.17      # [rad] +-10 deg cone used for the free distance ahead

@@ -1,0 +1,181 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 40
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /arcsf1tenth/robot_description
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      TF Prefix: arcsf1tenth
+      Visual Enabled: true
+      Collision Enabled: false
+      Alpha: 1
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Names: false
+      Show Axes: true
+      Show Arrows: false
+      Marker Scale: 0.3
+      Frames:
+        All Enabled: false
+        world:
+          Value: true
+        arcsf1tenth/map:
+          Value: true
+        arcsf1tenth/odom:
+          Value: true
+        arcsf1tenth/base_footprint:
+          Value: true
+        arcsf1tenth/lidar:
+          Value: true
+    - Class: rviz_default_plugins/Map
+      Name: SLAM map
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/map
+        Depth: 1
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+      Color Scheme: map
+      Alpha: 0.7
+      Draw Behind: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: Lidar scan
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/scan
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+      Style: Points
+      Size (Pixels): 4
+      Color Transformer: FlatColor
+      Color: 255; 220; 0
+      Alpha: 1
+      Decay Time: 0
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry measured (wheel)
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/odometry/measured
+        Depth: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Keep: 300
+      Position Tolerance: 0.1
+      Angle Tolerance: 0.1
+      Shape:
+        Value: Arrow
+        Color: 0; 220; 0
+        Alpha: 1
+        Shaft Length: 0.2
+        Shaft Radius: 0.01
+        Head Length: 0.06
+        Head Radius: 0.03
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry estimated (EKF)
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/odometry/estimated
+        Depth: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Keep: 300
+      Position Tolerance: 0.1
+      Angle Tolerance: 0.1
+      Shape:
+        Value: Arrow
+        Color: 40; 120; 255
+        Alpha: 1
+        Shaft Length: 0.2
+        Shaft Radius: 0.01
+        Head Length: 0.06
+        Head Radius: 0.03
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/Odometry
+      Name: Ground truth
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/ground_truth/odometry
+        Depth: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Keep: 300
+      Position Tolerance: 0.1
+      Angle Tolerance: 0.1
+      Shape:
+        Value: Arrow
+        Color: 230; 40; 40
+        Alpha: 0.7
+        Shaft Length: 0.2
+        Shaft Radius: 0.01
+        Head Length: 0.06
+        Head Radius: 0.03
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/Path
+      Name: Raceline (pure pursuit)
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/pure_pursuit/raceline
+        Depth: 1
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+      Line Style: Lines
+      Color: 255; 0; 255
+      Alpha: 1
+    - Class: rviz_default_plugins/Marker
+      Name: Lookahead point
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/pure_pursuit/lookahead
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: world
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Scale: 60
+      X: 0
+      Y: 0
+      Target Frame: arcsf1tenth/base_footprint
+Window Geometry:
+  Width: 1200
+  Height: 800

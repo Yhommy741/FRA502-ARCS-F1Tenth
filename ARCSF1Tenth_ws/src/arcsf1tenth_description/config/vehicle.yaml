@@ -1,0 +1,11 @@
+# Physical parameters of the ARCS F1Tenth car.
+/**:
+  ros__parameters:
+    wheelbase: 0.300            # [m] front-rear axle distance
+    front_track: 0.193          # [m] left-right steering pivot distance
+    rear_track: 0.260           # [m] left-right rear wheel distance (tyre centers)
+    wheel_radius: 0.039         # [m]
+    max_steering_angle: 0.5236  # [rad] steering joint limit
+    max_steering_speed: 1.0     # [rad/s] servo slew rate (URDF steering joint velocity limit)
+    max_speed: 3.0              # [m/s]
+    max_acceleration: 3.0       # [m/s^2] motor/brake limit (speeding up and slowing down)

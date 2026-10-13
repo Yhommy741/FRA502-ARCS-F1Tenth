@@ -1,0 +1,11 @@
+name: Levine Hall
+description: Hallway loop in Levine Hall, University of Pennsylvania (the original F1TENTH test track).
+source: https://github.com/f1tenth/f1tenth_gym (gym/f110_gym/envs/maps/levine)
+license: MIT (see LICENSE)
+
+# Car spawn pose in the world/map frame. yaw = car heading, 0 = +x, CCW positive [rad]
+# Default F1TENTH gym start pose
+start_pose: {x: 0.0, y: 0.0, yaw: 0.0}
+
+# world/world.sdf was generated with:
+#   map_to_world.py maps/sim/map.yaml world/world.sdf --name levine --unknown-is-wall

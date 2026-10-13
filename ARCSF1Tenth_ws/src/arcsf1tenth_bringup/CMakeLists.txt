@@ -48,7 +48,6 @@ install(TARGETS
 ################ INSTALL LAUNCH, ETC #################
 install(DIRECTORY
   config
-  urdf
   launch
   DESTINATION share/${PROJECT_NAME}
 )

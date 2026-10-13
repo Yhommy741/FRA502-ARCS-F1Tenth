@@ -1,0 +1,21 @@
+# Pure pursuit raceline follower (pure_pursuit.py). Vehicle limits come from
+# arcsf1tenth_description/config/vehicle.yaml; raceline file and frame from the launch file.
+pure_pursuit:
+  ros__parameters:
+    rate: 50.0                  # [Hz] control rate
+
+    # Lookahead distance Ld = lookahead_min + lookahead_gain * speed, limited to [min, max]
+    #   longer  = smoother, cuts corners
+    #   shorter = tracks tighter, but weaves at speed
+    lookahead_min: 0.6          # [m]
+    lookahead_max: 2.0          # [m]
+    lookahead_gain: 0.35        # [s]
+
+    # Speed = raceline speed (vx column) * speed_scale, limited to [speed_min, speed_max]
+    speed_scale: 0.6            # start low, raise toward 1.0 when it tracks well
+    speed_max: 3.0              # [m/s] (capped at vehicle max_speed)
+    speed_min: 0.5              # [m/s]
+
+    # Safety
+    max_tracking_error: 1.0     # [m] stop when the car is further than this from the raceline (lost / crashed)
+    search_window: 5.0          # [m] look for the nearest point only this far around the last one

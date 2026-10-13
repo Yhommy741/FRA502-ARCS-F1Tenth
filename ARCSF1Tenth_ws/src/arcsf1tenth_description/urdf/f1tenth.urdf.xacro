@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- Robot model: SolidWorks-exported URDF + REP-103 base_footprint root frame -->
+<robot name="f1tenth_urdf" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find arcsf1tenth_description)/urdf/f1tenth_urdf.urdf" />
+
+  <!--
+    base_footprint: x forward, y left, z up (REP-103), on the ground under the
+    rear axle center. The rear axle is the bicycle-model reference point (it
+    never slides sideways), so odometry is computed for this frame.
+
+    base_link origin is 0.11617 m ahead of the rear axle; the rear wheel
+    centers are 0.0075 m above base_link with radius 0.039 m.
+  -->
+  <link name="base_footprint" />
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint" />
+    <child link="base_link" />
+    <origin xyz="0.11617 0 0.0315" rpy="0 0 0" />
+  </joint>
+
+</robot>

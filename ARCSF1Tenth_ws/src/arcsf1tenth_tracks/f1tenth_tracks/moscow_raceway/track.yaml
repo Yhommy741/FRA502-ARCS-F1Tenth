@@ -1,0 +1,11 @@
+name: Moscow Raceway
+description: F1 circuit scaled 1:10, fixed track width 2.2 m. Includes centerline and minimum-curvature raceline.
+source: https://github.com/f1tenth/f1tenth_racetracks (MoscowRaceway)
+license: GPL-3.0 (see LICENSE)
+
+# Car spawn pose in the world/map frame. yaw = car heading, 0 = +x, CCW positive [rad]
+# Start of centerline.csv, facing along the track
+start_pose: {x: 0.0, y: 0.0, yaw: 1.461}
+
+# world/world.sdf was generated with:
+#   map_to_world.py maps/sim/map.yaml world/world.sdf --name moscow_raceway

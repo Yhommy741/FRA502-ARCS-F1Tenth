@@ -1,0 +1,33 @@
+# Sensor specifications of the ARCS F1Tenth car.
+# Single source of truth for the simulated sensors (Gazebo xacro, gazebo_imu.py)
+# and for nodes that need sensor noise (ekf.py). Parameters appear as imu.* / lidar.*
+/**:
+  ros__parameters:
+    # IMU: Bosch BNO055 (datasheet BST-BNO055-DS000, Bosch Sensortec):
+    #   - Gyroscope:   noise density ~ 0.014 deg/s/sqrt(Hz) (0.000244 rad/s/sqrt(Hz))
+    #                  zero-rate offset ~ +-1 deg/s after calibration
+    #   - Accelerometer (+-4g): noise density ~ 190 ug/sqrt(Hz) (0.0019 m/s^2/sqrt(Hz))
+    #                           zero-g offset ~ +-80 mg
+    #   - IMU-mode fusion: yaw drift ~ 1 deg/min without magnetometer; ODR 100 Hz
+    # Per-sample noise std = noise density * sqrt(rate). Offsets are worst case.
+    imu:
+      rate: 100.0               # [Hz]
+      gyro_noise_std: 0.0024    # [rad/s]   0.000244 * sqrt(100)
+      gyro_bias: 0.0175         # [rad/s]   1 deg/s zero-rate offset
+      gyro_bias_std: 0.002      # [rad/s]   spread of the offset between runs (sim)
+      accel_noise_std: 0.019    # [m/s^2]   0.0019 * sqrt(100)
+      accel_bias: 0.785         # [m/s^2]   80 mg zero-g offset
+      accel_bias_std: 0.08      # [m/s^2]   spread of the offset between runs (sim)
+
+    # Lidar: Slamtec RPLidar C1 (datasheet slamtec.com/en/c1):
+    #   - Range:             0.05 - 12 m (70 % reflectivity); 6 m at 10 % reflectivity
+    #   - Distance accuracy: +-30 mm (DTOF)
+    #   - Sample rate:       5 kHz at 10 Hz scan -> angular resolution 0.72 deg
+    lidar:
+      rate: 10.0                # [Hz] scan rate
+      range_min: 0.05           # [m]
+      range_max: 12.0           # [m]
+      samples: 500              # per 360 deg scan (5000 Hz / 10 Hz) -> 0.72 deg
+      angle_min: -3.14159       # [rad]
+      angle_max: 3.12903        # [rad] pi - 0.72 deg (360 deg without counting -180/+180 twice)
+      range_noise_std: 0.015    # [m] +-30 mm accuracy taken as +-2 sigma

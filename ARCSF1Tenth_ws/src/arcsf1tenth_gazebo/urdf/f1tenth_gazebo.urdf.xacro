@@ -1,0 +1,146 @@
+<?xml version="1.0"?>
+<!-- Gazebo wrapper: the robot model plus Gazebo-only plugins and sensors -->
+<robot name="f1tenth_urdf" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find arcsf1tenth_description)/urdf/f1tenth.urdf.xacro" />
+
+  <!-- Robot namespace (set by the launch file): TF frames are <namespace>/<link> -->
+  <xacro:arg name="namespace" default="arcsf1tenth" />
+  <xacro:property name="frame_prefix" value="${'$(arg namespace)' + '/' if '$(arg namespace)' else ''}" />
+
+  <!-- Steering: position-controlled like the real servo (topic: steer_*_cmd [rad]) -->
+  <xacro:macro name="steering_controller" params="joint topic">
+    <gazebo>
+      <plugin filename="gz-sim-joint-position-controller-system"
+              name="gz::sim::systems::JointPositionController">
+        <joint_name>${joint}</joint_name>
+        <topic>${topic}</topic>
+        <use_velocity_commands>true</use_velocity_commands>
+        <p_gain>20</p_gain>
+        <cmd_max>5</cmd_max>
+        <cmd_min>-5</cmd_min>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- Drive: velocity-controlled rear wheels like motor + speed PID (topic: wheel_*_cmd [rad/s]) -->
+  <xacro:macro name="wheel_controller" params="joint topic">
+    <gazebo>
+      <plugin filename="gz-sim-joint-controller-system"
+              name="gz::sim::systems::JointController">
+        <joint_name>${joint}</joint_name>
+        <topic>${topic}</topic>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:steering_controller joint="TFL_wheel_joint" topic="steer_left_cmd" />
+  <xacro:steering_controller joint="TFR_wheel_joint" topic="steer_right_cmd" />
+  <xacro:wheel_controller joint="RL_wheel_joint" topic="wheel_rl_cmd" />
+  <xacro:wheel_controller joint="RR_wheel_joint" topic="wheel_rr_cmd" />
+
+  <gazebo>
+    <!-- Publish joint states so robot_state_publisher can compute wheel TFs -->
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>joint_states</topic>
+    </plugin>
+
+    <!-- Ground-truth pose of base_footprint in the world frame, for evaluating
+         the odometry/localization. Its TF (world_tf) is NOT bridged to /tf,
+         because odom -> base_footprint comes from the EKF. -->
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>world</odom_frame>
+      <robot_base_frame>${frame_prefix}base_footprint</robot_base_frame>
+      <odom_topic>ground_truth/odometry</odom_topic>
+      <tf_topic>ground_truth/tf</tf_topic>
+      <dimensions>3</dimensions>
+      <odom_publish_frequency>50</odom_publish_frequency>
+    </plugin>
+  </gazebo>
+
+  <!--
+    IMU (topic: imu). Noise, bias and rate come from
+    arcsf1tenth_description/config/sensors.yaml (BNO055 datasheet values).
+    Gazebo picks a random sign for bias_mean each run.
+    The BNO055's fused orientation output is not modelled (Gazebo's orientation is
+    exact); the EKF only uses the gyro yaw rate.
+    gazebo_imu.py republishes this as imu with frame_id <namespace>/imu and covariances.
+  -->
+  <xacro:property name="sensors"
+    value="${xacro.load_yaml('$(find arcsf1tenth_description)/config/sensors.yaml')['/**']['ros__parameters']}" />
+  <xacro:property name="imu" value="${sensors['imu']}" />
+
+  <xacro:macro name="imu_noise" params="stddev bias_mean bias_stddev">
+    <noise type="gaussian">
+      <mean>0.0</mean>
+      <stddev>${stddev}</stddev>
+      <bias_mean>${bias_mean}</bias_mean>
+      <bias_stddev>${bias_stddev}</bias_stddev>
+    </noise>
+  </xacro:macro>
+
+  <gazebo reference="imu">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>${imu['rate']}</update_rate>
+      <topic>imu</topic>
+      <imu>
+        <angular_velocity>
+          <x><xacro:imu_noise stddev="${imu['gyro_noise_std']}" bias_mean="${imu['gyro_bias']}" bias_stddev="${imu['gyro_bias_std']}" /></x>
+          <y><xacro:imu_noise stddev="${imu['gyro_noise_std']}" bias_mean="${imu['gyro_bias']}" bias_stddev="${imu['gyro_bias_std']}" /></y>
+          <z><xacro:imu_noise stddev="${imu['gyro_noise_std']}" bias_mean="${imu['gyro_bias']}" bias_stddev="${imu['gyro_bias_std']}" /></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><xacro:imu_noise stddev="${imu['accel_noise_std']}" bias_mean="${imu['accel_bias']}" bias_stddev="${imu['accel_bias_std']}" /></x>
+          <y><xacro:imu_noise stddev="${imu['accel_noise_std']}" bias_mean="${imu['accel_bias']}" bias_stddev="${imu['accel_bias_std']}" /></y>
+          <z><xacro:imu_noise stddev="${imu['accel_noise_std']}" bias_mean="${imu['accel_bias']}" bias_stddev="${imu['accel_bias_std']}" /></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!--
+    Lidar (topic: scan). Specs come from arcsf1tenth_description/config/sensors.yaml
+    (RPLidar C1 datasheet values). The world must load the Sensors system (ogre2).
+    gazebo_lidar.py republishes this as scan with frame_id <namespace>/lidar.
+  -->
+  <xacro:property name="lidar" value="${sensors['lidar']}" />
+
+  <gazebo reference="lidar">
+    <sensor name="lidar_sensor" type="gpu_lidar">
+      <always_on>true</always_on>
+      <visualize>false</visualize>
+      <update_rate>${lidar['rate']}</update_rate>
+      <topic>scan</topic>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>${lidar['samples']}</samples>
+            <resolution>1</resolution>
+            <min_angle>${lidar['angle_min']}</min_angle>
+            <max_angle>${lidar['angle_max']}</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <resolution>1</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>${lidar['range_min']}</min>
+          <max>${lidar['range_max']}</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>${lidar['range_noise_std']}</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+</robot>

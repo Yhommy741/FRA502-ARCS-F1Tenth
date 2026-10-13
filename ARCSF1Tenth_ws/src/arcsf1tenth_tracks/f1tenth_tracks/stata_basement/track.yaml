@@ -1,0 +1,11 @@
+name: Stata Basement
+description: Basement hallway loop in the MIT Stata Center (F1TENTH gym map).
+source: https://github.com/f1tenth/f1tenth_gym (gym/f110_gym/envs/maps/stata_basement)
+license: MIT (see LICENSE)
+
+# Car spawn pose in the world/map frame. yaw = car heading, 0 = +x, CCW positive [rad]
+# Most open spot on the map, facing the longest clear direction
+start_pose: {x: 14.352, y: 0.208, yaw: 0.0}
+
+# world/world.sdf was generated with:
+#   map_to_world.py maps/sim/map.yaml world/world.sdf --name stata_basement
