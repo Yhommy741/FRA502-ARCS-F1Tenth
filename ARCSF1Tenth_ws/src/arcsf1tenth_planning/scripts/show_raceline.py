@@ -18,7 +18,7 @@ from arcsf1tenth_planning.tracks import resolve_map
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('map_yaml', help='map yaml (e.g. slam_map.yaml) or a track name (e.g. brands_hatch)')
+    parser.add_argument('map_yaml', help='map yaml (e.g. cartographer_map.yaml) or a track name (e.g. brands_hatch)')
     parser.add_argument('--centerline', default=None, help='centerline CSV (default: <map>_centerline.csv)')
     parser.add_argument('--raceline', default=None, help='raceline CSV (default: <map>_raceline.csv)')
     parser.add_argument('--start', type=float, nargs=3, default=None, metavar=('X', 'Y', 'YAW'),

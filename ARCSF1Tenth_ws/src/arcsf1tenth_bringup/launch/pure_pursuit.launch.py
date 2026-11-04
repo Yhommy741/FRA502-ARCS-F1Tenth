@@ -20,8 +20,8 @@ def find_raceline(track, prefix):
         raise RuntimeError(f"Track '{track}' not found. Available: {', '.join(available)}")
     sim_dir = os.path.join(os.path.dirname(matches[0]), 'maps', 'sim')
 
-    # generate_raceline.py on the SLAM map: in the SLAM map frame (needs slam:=localization)
-    slam_raceline = os.path.join(sim_dir, 'slam_map_raceline.csv')
+    # generate_raceline.py on the Cartographer map: in the map frame (needs slam:=localization)
+    slam_raceline = os.path.join(sim_dir, 'cartographer_map_raceline.csv')
     if os.path.isfile(slam_raceline):
         return slam_raceline, f'{prefix}map'
     # Original F1TENTH raceline: in the map.yaml frame = Gazebo world frame (simulation only)
@@ -83,7 +83,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'track',
             default_value='',
-            description='Track folder in arcsf1tenth_tracks: uses maps/sim/slam_map_raceline.csv (frame map), '
+            description='Track folder in arcsf1tenth_tracks: uses maps/sim/cartographer_map_raceline.csv (frame map), '
                         'else the original maps/sim/raceline.csv (frame world, simulation only)',
         ),
         DeclareLaunchArgument('raceline', default_value='', description='Raceline CSV path (overrides track)'),

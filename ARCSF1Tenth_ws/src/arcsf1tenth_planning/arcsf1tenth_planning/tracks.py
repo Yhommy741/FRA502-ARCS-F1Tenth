@@ -6,8 +6,9 @@ import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_prefix, get_package_share_directory
 
 
-# Map files tried for a track name, in order: our SLAM map first, then the original F1TENTH map
-MAP_NAMES = ('slam_map.yaml', 'map.yaml')
+# Map files tried for a track name, in order: our Cartographer map first, then the original F1TENTH map
+SLAM_MAP = 'cartographer_map.yaml'
+MAP_NAMES = (SLAM_MAP, 'map.yaml')
 
 
 def tracks_dir():
@@ -54,7 +55,7 @@ def resolve_map(arg):
     else:
         sys.exit(f"Track '{name}' has no {' or '.join(MAP_NAMES)} in {track_dir}/maps/sim")
 
-    if map_name == 'slam_map.yaml':
+    if map_name == SLAM_MAP:
         start = [0.0, 0.0, 0.0]
     else:
         with open(matches[0]) as f:

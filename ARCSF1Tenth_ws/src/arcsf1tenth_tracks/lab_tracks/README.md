@@ -11,4 +11,4 @@ Our own tracks (real lab track and its Gazebo replica). One folder per track:
     └── real/           # SLAM map built on the real car (+ raceline.csv for this map)
 ```
 
-Launch with `ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<track_name>`.
+Launch with `ros2 launch arcsf1tenth_bringup yhom_simulation.launch.py track:=<track_name>` (or `non_simulation.launch.py`).

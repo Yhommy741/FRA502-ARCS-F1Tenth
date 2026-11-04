@@ -295,8 +295,8 @@ def load_vehicle(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('map_yaml', help='map yaml (e.g. slam_map.yaml) or a track name (e.g. brands_hatch: '
-                                         'its slam_map.yaml, else map.yaml)')
+    parser.add_argument('map_yaml', help='map yaml (e.g. cartographer_map.yaml) or a track name (e.g. brands_hatch: '
+                                         'its cartographer_map.yaml, else map.yaml)')
     parser.add_argument('--start', type=float, nargs=3, default=None, metavar=('X', 'Y', 'YAW'),
                         help='start pose in the map frame; YAW sets the driving direction '
                              '(default 0 0 0 = where SLAM mapping started; track name + map.yaml: track.yaml start_pose)')

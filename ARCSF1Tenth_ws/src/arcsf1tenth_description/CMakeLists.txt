@@ -25,26 +25,6 @@ find_package(rclpy REQUIRED)                	# python (optional)
 # Install Python Module
 ament_python_install_package(${PROJECT_NAME})
 
-# Install Python executables
-install(PROGRAMS
-  scripts/dummy_script.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-
-# Include Cpp "include" directory
-include_directories(include)
-
-# Create Cpp executable
-add_executable(cpp_node_test src/cpp_node.cpp)
-ament_target_dependencies(cpp_node_test rclcpp)
-
-# Install Cpp executables
-install(TARGETS
-  cpp_node_test
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 ################ INSTALL LAUNCH, ETC #################
 install(DIRECTORY
   # add directories here

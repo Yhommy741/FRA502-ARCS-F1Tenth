@@ -8,20 +8,14 @@ from launch import LaunchDescription
 from launch.actions import (
     AppendEnvironmentVariable,
     DeclareLaunchArgument,
-    EmitEvent,
     ExecuteProcess,
     IncludeLaunchDescription,
     OpaqueFunction,
-    RegisterEventHandler,
 )
 from launch.conditions import IfCondition
-from launch.events import matches_action
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
-from lifecycle_msgs.msg import Transition
+from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
@@ -60,6 +54,22 @@ def namespaced_rviz_config(template, namespace):
     return path
 
 
+def namespaced_cartographer_configs(config_dir, namespace):
+    """Lua cannot read launch arguments: copy the Cartographer configs with the namespace filled in.
+
+    Returns the directory to pass as -configuration_directory (Cartographer's own
+    map_builder.lua / trajectory_builder.lua are found automatically)."""
+    prefix = f'{namespace}/' if namespace else ''
+    out_dir = os.path.join(tempfile.gettempdir(), f'{namespace or "root"}_cartographer')
+    os.makedirs(out_dir, exist_ok=True)
+    for name in glob.glob(os.path.join(config_dir, 'cartographer_*.lua')):
+        with open(name) as f:
+            text = f.read().replace('"arcsf1tenth/', f'"{prefix}')
+        with open(os.path.join(out_dir, os.path.basename(name)), 'w') as f:
+            f.write(text)
+    return out_dir
+
+
 def launch_setup(context):
     namespace = LaunchConfiguration('namespace').perform(context).strip('/')
     prefix = f'{namespace}/' if namespace else ''  # TF frames: <namespace>/<link>
@@ -86,7 +96,6 @@ def launch_setup(context):
     ekf_config = LaunchConfiguration('ekf_config').perform(context) or os.path.join(localization_pkg, 'config', 'ekf.yaml')
     if not os.path.isfile(ekf_config):
         raise RuntimeError(f"ekf_config file not found: '{ekf_config}'")
-    slam_config = os.path.join(localization_pkg, 'config', 'slam_toolbox.yaml')
     rviz_config = namespaced_rviz_config(os.path.join(bringup_pkg, 'config', 'simulation.rviz'), namespace)
 
     robot_description = ParameterValue(
@@ -228,64 +237,77 @@ def launch_setup(context):
             parameters=[{'use_sim_time': True}],
         ))
     else:
-        # slam_toolbox publishes map -> odom (drift correction) and the map topic
-        slam_params = {
-            'use_sim_time': True,
-            'map_frame': f'{prefix}map',
-            'odom_frame': f'{prefix}odom',
-            'base_frame': f'{prefix}base_footprint',
-            'scan_topic': f'/{prefix}scan',
-            'map_name': f'/{prefix}map',  # default '/map' is absolute and ignores the namespace
-            'mode': slam,
-        }
-        if slam == 'localization':
+        # Cartographer publishes map -> odom (drift correction); the occupancy grid node
+        # turns its submaps into the map topic. Odometry input = the EKF output.
+        config_dir = namespaced_cartographer_configs(os.path.join(localization_pkg, 'config'), namespace)
+        arguments = ['-configuration_directory', config_dir]
+        if slam == 'mapping':
+            arguments += ['-configuration_basename', 'cartographer_2d.lua']
+        else:
             if not slam_map:
                 if track_dir is None:
-                    raise RuntimeError('slam:=localization needs slam_map:=<path to saved map, without extension>')
-                slam_map = os.path.join(track_dir, 'maps', 'sim', 'slam_map')
-            if not os.path.exists(slam_map + '.posegraph'):
+                    raise RuntimeError('slam:=localization needs slam_map:=<path to the saved .pbstream>')
+                slam_map = os.path.join(track_dir, 'maps', 'sim', 'cartographer_map')
+            if not slam_map.endswith('.pbstream'):
+                slam_map += '.pbstream'
+            if not os.path.isfile(slam_map):
                 raise RuntimeError(
-                    f"No saved map '{slam_map}.posegraph'. Build one with slam:=mapping and save it "
-                    '(serialize_map), then colcon build, or pass slam_map:=<path without extension>')
-            slam_params['map_file_name'] = slam_map
-            slam_params['map_start_pose'] = [0.0, 0.0, 0.0]  # car starts where the map was started
-        # slam_toolbox is a lifecycle node (Jazzy): it only loads its parameters and
-        # starts after 'configure' and 'activate' (same as slam_toolbox's own launch files)
-        slam_node = LifecycleNode(
-            package='slam_toolbox',
-            executable='async_slam_toolbox_node' if slam == 'mapping' else 'localization_slam_toolbox_node',
-            name='slam_toolbox',
-            namespace=namespace,
-            output='screen',
-            parameters=[slam_config, slam_params],
-        )
+                    f"No saved map '{slam_map}'. Build one with slam:=mapping, save it "
+                    '(finish_trajectory + write_state), then colcon build, or pass slam_map:=<file.pbstream>')
+            # Car starts where mapping started: the new trajectory begins at the map origin
+            arguments += ['-configuration_basename', 'cartographer_2d_localization.lua',
+                          '-load_state_filename', slam_map]
         actions += [
-            slam_node,
-            EmitEvent(event=ChangeState(
-                lifecycle_node_matcher=matches_action(slam_node),
-                transition_id=Transition.TRANSITION_CONFIGURE,
-            )),
-            RegisterEventHandler(OnStateTransition(
-                target_lifecycle_node=slam_node,
-                start_state='configuring',
-                goal_state='inactive',
-                entities=[EmitEvent(event=ChangeState(
-                    lifecycle_node_matcher=matches_action(slam_node),
-                    transition_id=Transition.TRANSITION_ACTIVATE,
-                ))],
-            )),
+            Node(
+                package='cartographer_ros',
+                executable='cartographer_node',
+                namespace=namespace,
+                output='screen',
+                arguments=arguments,
+                remappings=[('odom', 'odometry/estimated')],
+                parameters=[{'use_sim_time': True}],
+            ),
+            Node(
+                package='cartographer_ros',
+                executable='cartographer_occupancy_grid_node',
+                namespace=namespace,
+                output='screen',
+                arguments=['-resolution', '0.05', '-publish_period_sec', '1.0'],
+                parameters=[{'use_sim_time': True}],
+            ),
         ]
 
     if use_ekf:
-        # Vehicle odometry EKF: odometry/measured + imu -> odometry/estimated + odom TF
-        actions.append(Node(
-            package='arcsf1tenth_localization',
-            executable='ekf.py',
-            name='ekf',  # so the launch overrides beat the node params in ekf.yaml
-            namespace=namespace,
-            output='screen',
-            parameters=[ekf_config, {'use_sim_time': True, 'use_imu': use_imu}],
-        ))
+        ekf_overrides = {
+            'use_sim_time': True,
+            'map_frame': f'{prefix}map',
+            'odom_frame': f'{prefix}odom',
+            'base_link_frame': f'{prefix}base_footprint',
+            'world_frame': f'{prefix}odom',
+        }
+        if not use_imu:
+            ekf_overrides['imu0_config'] = [False] * 15
+        actions += [
+            # Gyro bias removal while standing still (ZUPT): imu -> imu/corrected
+            Node(
+                package='arcsf1tenth_localization',
+                executable='imu_bias_correction.py',
+                namespace=namespace,
+                output='screen',
+                parameters=[{'use_sim_time': True}],
+            ),
+            # robot_localization EKF (15-state general model):
+            # odometry/measured + imu/corrected -> odometry/estimated + TF odom -> base_footprint
+            Node(
+                package='robot_localization',
+                executable='ekf_node',
+                name='ekf',  # so the launch overrides beat the node params in ekf.yaml
+                namespace=namespace,
+                output='screen',
+                parameters=[ekf_config, ekf_overrides],
+                remappings=[('odometry/filtered', 'odometry/estimated')],
+            ),
+        ]
 
     return actions
 
@@ -310,7 +332,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_ekf',
             default_value='true',
-            description='Run the odometry EKF (odometry/estimated + odom TF); false = measured odometry owns the TF',
+            description='Run the robot_localization EKF (odometry/estimated + odom TF); '
+                        'false = measured odometry owns the TF',
         ),
         DeclareLaunchArgument(
             'use_imu',
@@ -325,13 +348,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'slam',
             default_value='off',
-            description='off | mapping (build a new map) | localization (on a saved map)',
+            description='Cartographer SLAM: off | mapping (build a new map) | localization (on a saved map)',
         ),
         DeclareLaunchArgument(
             'slam_map',
             default_value='',
-            description='Saved map for slam:=localization, path without extension '
-                        '(default: <track>/maps/sim/slam_map)',
+            description='Saved Cartographer map for slam:=localization '
+                        '(default: <track>/maps/sim/cartographer_map.pbstream)',
         ),
         DeclareLaunchArgument(
             'follow_camera',

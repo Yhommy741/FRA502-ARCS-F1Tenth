@@ -79,7 +79,7 @@ class OdomEval(Node):
         self.create_subscription(Odometry, 'odometry/measured', lambda m: self.odom_callback('measured', m), 50)
         self.create_subscription(Odometry, 'odometry/estimated', lambda m: self.odom_callback('estimated', m), 50)
         self.create_subscription(Imu, 'imu', self.imu_callback, 100)
-        self.create_subscription(Float64, 'ekf/gyro_bias', self.bias_callback, 10)
+        self.create_subscription(Float64, 'imu_bias_correction/gyro_bias', self.bias_callback, 10)
         self.create_timer(self.get_parameter('print_period').value, self.print_status)
         self.get_logger().info('Comparing odometry/measured and odometry/estimated with ground_truth/odometry')
 
@@ -148,7 +148,7 @@ class OdomEval(Node):
             lines.append(f'  {name:18} {r.summary()}')
         if self.bias_estimate is not None and self.gyro_bias_samples:
             lines.append(
-                f'Gyro bias [rad/s]: EKF {self.bias_estimate:+.4f}, actual (last 5 s) {np.mean(self.gyro_bias_samples):+.4f}')
+                f'Gyro bias [rad/s]: ZUPT estimate {self.bias_estimate:+.4f}, actual (last 5 s) {np.mean(self.gyro_bias_samples):+.4f}')
         print('\n'.join(lines))
 
 
