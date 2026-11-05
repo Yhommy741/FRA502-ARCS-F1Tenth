@@ -9,3 +9,8 @@
     max_steering_speed: 1.0     # [rad/s] servo slew rate (URDF steering joint velocity limit)
     max_speed: 3.0              # [m/s]
     max_acceleration: 3.0       # [m/s^2] motor/brake limit (speeding up and slowing down)
+    # Car outline measured from base_footprint (rear axle center, x forward), from the URDF meshes.
+    # Used for collision checks (generate_raceline.py).
+    footprint_front: 0.381      # [m] rear axle -> front bumper
+    footprint_rear: 0.075       # [m] rear axle -> rear end
+    footprint_width: 0.292      # [m] full width (rear wheels)

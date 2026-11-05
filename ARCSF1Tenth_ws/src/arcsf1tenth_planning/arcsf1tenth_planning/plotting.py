@@ -23,7 +23,15 @@ def load_map_image(map_yaml):
 
 
 def load_centerline(path):
-    """x, y (+ widths) from a centerline CSV (x_m, y_m, w_tr_right_m, w_tr_left_m)."""
+    """Centerline points (x, y in the first two columns) from either format:
+
+    - generate_raceline.py:  s; x; y; psi; kappa; vx; ax   (semicolon, followable line)
+    - original F1TENTH:      x, y, w_tr_right, w_tr_left   (comma)
+    """
+    with open(path) as f:
+        first = next((line for line in f if line.strip() and not line.startswith('#')), '')
+    if ';' in first:
+        return np.loadtxt(path, delimiter=';', comments='#', ndmin=2)[:, 1:3]
     return np.loadtxt(path, delimiter=',', comments='#', ndmin=2)
 
 

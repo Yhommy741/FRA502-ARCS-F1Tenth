@@ -1,0 +1,38 @@
+# imu_filter.py — IMU preprocessing before the EKF: imu -> imu/filtered.
+#
+#   imu (raw) ──► imu_filter ──► imu/filtered ──► robot_localization EKF (ekf.yaml imu0)
+#   odometry/wheel (wheel speed, for standstill detection) ──┘
+#
+# robot_localization has no gyro-bias state, so the bias is removed here:
+#   1. startup calibration: keep the car STILL for calibration_seconds after launch
+#      (log: "Gyro calibrated ..."); measures bias + noise variance per axis
+#   2. ZUPT (zero-velocity update): every later standstill refreshes the bias
+#      (follows BNO055 warm-up / temperature drift)
+#   3. measured variances -> message covariance (EKF weighting)
+# Simulation defaults below. Real car (yhom_real / non_real launch) also turns on:
+#   project_to_horizontal: true    (suspension roll/pitch removed from the yaw rate)
+#   gyro_median_window: 3          (spike rejection)
+#   gyro_ma_window: 5              (noise smoothing, ~20 ms delay at 100 Hz)
+
+/**/imu_filter:                   # any namespace
+  ros__parameters:
+    # ---- 1. startup calibration ----
+    calibration_seconds: 3.0      # [s] still time to measure bias + noise
+    calibration_timeout: 15.0     # [s] then publish anyway with bias 0 until the first ZUPT
+
+    # ---- standstill detection (calibration + ZUPT) ----
+    still_speed: 0.05             # [m/s]   wheel speed below this = not driving
+    still_gyro: 0.05              # [rad/s] bias-corrected gyro norm below this = not turning (not pushed by hand)
+
+    # ---- 2. ZUPT ----
+    zupt_enabled: true
+    zupt_settle_time: 0.5         # [s] still this long before updating the bias (not just slowing for a corner)
+    zupt_alpha: 0.01              # per sample, 0.01 at 100 Hz ≈ 1 s time constant
+
+    # ---- optional (real car) ----
+    project_to_horizontal: false
+    gyro_median_window: 1         # 1 = off
+    gyro_ma_window: 1             # 1 = off
+
+    # ---- 3. covariance ----
+    min_variance: 1.0e-8          # floor for the measured variances

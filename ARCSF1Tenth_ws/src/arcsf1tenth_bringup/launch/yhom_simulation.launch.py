@@ -93,6 +93,7 @@ def launch_setup(context):
     bridge_config = os.path.join(gazebo_pkg, 'config', 'bridge.yaml')
     vehicle_config = os.path.join(description_pkg, 'config', 'vehicle.yaml')
     sensors_config = os.path.join(description_pkg, 'config', 'sensors.yaml')
+    imu_filter_config = os.path.join(localization_pkg, 'config', 'imu_filter.yaml')
     ekf_config = LaunchConfiguration('ekf_config').perform(context) or os.path.join(localization_pkg, 'config', 'ekf.yaml')
     if not os.path.isfile(ekf_config):
         raise RuntimeError(f"ekf_config file not found: '{ekf_config}'")
@@ -255,8 +256,10 @@ def launch_setup(context):
                     f"No saved map '{slam_map}'. Build one with slam:=mapping, save it "
                     '(finish_trajectory + write_state), then colcon build, or pass slam_map:=<file.pbstream>')
             # Car starts where mapping started: the new trajectory begins at the map origin
+            # The trajectory is started below with the known start pose instead of automatically
             arguments += ['-configuration_basename', 'cartographer_2d_localization.lua',
-                          '-load_state_filename', slam_map]
+                          '-load_state_filename', slam_map,
+                          '-start_trajectory_with_default_topics=false']
         actions += [
             Node(
                 package='cartographer_ros',
@@ -276,6 +279,24 @@ def launch_setup(context):
                 parameters=[{'use_sim_time': True}],
             ),
         ]
+        if slam == 'localization':
+            # Start localization AT the known start pose: map origin (= where mapping started =
+            # the track's start pose), relative to the saved map's trajectory 0. Without it,
+            # Cartographer searches the whole map and can snap to a look-alike spot.
+            # 'ros2 service call' waits until cartographer_node is ready.
+            start_request = (
+                f"{{configuration_directory: '{config_dir}', "
+                "configuration_basename: 'cartographer_2d_localization.lua', "
+                'use_initial_pose: true, '
+                'initial_pose: {position: {x: 0.0, y: 0.0, z: 0.0}, '
+                'orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, '
+                'relative_to_trajectory_id: 0}'
+            )
+            actions.append(ExecuteProcess(
+                cmd=['ros2', 'service', 'call', f'/{prefix}start_trajectory',
+                     'cartographer_ros_msgs/srv/StartTrajectory', start_request],
+                output='screen',
+            ))
 
     if use_ekf:
         ekf_overrides = {
@@ -288,8 +309,16 @@ def launch_setup(context):
         if not use_imu:
             ekf_overrides['imu0_config'] = [False] * 15
         actions += [
+            # IMU preprocessing (startup calibration + ZUPT gyro bias): imu -> imu/filtered
+            Node(
+                package='arcsf1tenth_localization',
+                executable='imu_filter.py',
+                namespace=namespace,
+                output='screen',
+                parameters=[imu_filter_config, {'use_sim_time': True}],
+            ),
             # robot_localization EKF (15-state general model):
-            # odometry/wheel + imu -> odometry/estimated + TF odom -> base_footprint
+            # odometry/wheel + imu/filtered -> odometry/estimated + TF odom -> base_footprint
             Node(
                 package='robot_localization',
                 executable='ekf_node',

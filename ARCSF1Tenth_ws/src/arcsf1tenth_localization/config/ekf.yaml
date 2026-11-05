@@ -3,7 +3,7 @@
 # Architecture:
 #   odometry/wheel (50 Hz, wheel vx, vy = 0) ────────────────────────┐
 #                                                                    ├──► ekf ──► odometry/estimated (50 Hz)
-#   imu (gyro Z) ────────────────────────────────────────────────────┘      ──► TF odom → base_footprint (50 Hz)
+#   imu ──► imu_filter (bias + ZUPT) ──► imu/filtered (gyro Z) ─────┘      ──► TF odom → base_footprint (50 Hz)
 #                                                                              │
 #                                                                              ▼
 #                                                            Cartographer (slam:=mapping/localization)
@@ -20,12 +20,12 @@
 #   gyro:     vyaw (rotation)
 #   Optional bicycle-model yaw rate: set odom0_config slot vyaw (index 11) to true.
 #
-# Gyro bias: robot_localization has no bias state, so the raw gyro offset is integrated
-# into heading drift (BNO055 zero-rate offset ±1 °/s, sensors.yaml). Cartographer's scan
-# matching corrects it in map -> odom.
+# Gyro bias: robot_localization has no bias state. imu_filter removes it before the EKF
+# (startup calibration + ZUPT at every standstill, config/imu_filter.yaml), so keep the
+# car still for ~3 s after launch. BNO055 zero-rate offset ±1 °/s (sensors.yaml).
 #
 # Measurement noise comes from the input messages' covariance fields:
-#   imu                  gyro variance 5.76e-6 (rad/s)² (sensors.yaml, set by gazebo_imu)
+#   imu/filtered         gyro variance measured at calibration (imu_filter)
 #   odometry/wheel       vx/vyaw variance 0.0025, vy 1e-6 (set by gazebo_wheel_odometry)
 #
 # Frames (map/odom/base_link/world) are set by the launch file from the namespace.
@@ -73,7 +73,7 @@
     #     (would be cheating) → not used.
     #   - accel: integrating twice = position drift/jitter → not used.
     # The launch argument use_imu:=false switches this input off.
-    imu0: imu
+    imu0: imu/filtered
     imu0_config: [false, false, false,
                   false, false, false,
                   false, false, false,

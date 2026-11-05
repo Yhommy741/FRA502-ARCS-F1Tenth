@@ -23,7 +23,7 @@ import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
@@ -94,6 +94,7 @@ def launch_setup(context):
     xacro_file = os.path.join(description_pkg, 'urdf', 'f1tenth.urdf.xacro')  # robot model only, no Gazebo plugins
     vehicle_config = os.path.join(description_pkg, 'config', 'vehicle.yaml')  # noqa: F841  (for the drivers below)
     sensors_config = os.path.join(description_pkg, 'config', 'sensors.yaml')  # noqa: F841  (for the drivers below)
+    imu_filter_config = os.path.join(localization_pkg, 'config', 'imu_filter.yaml')
     ekf_config = LaunchConfiguration('ekf_config').perform(context) or os.path.join(localization_pkg, 'config', 'ekf.yaml')
     if not os.path.isfile(ekf_config):
         raise RuntimeError(f"ekf_config file not found: '{ekf_config}'")
@@ -142,7 +143,7 @@ def launch_setup(context):
 
         # TODO IMU: BNO055 -> imu (sensor_msgs/Imu), frame_id <ns>/imu, with the gyro
         #   covariance from sensors.yaml (imu.gyro_noise_std). Gyro yaw rate is the only
-        #   field the EKF uses.
+        #   field the EKF uses (after imu_filter removes the bias).
         # Node(
         #     package='<bno055 driver package>',
         #     executable='<bno055 driver node>',
@@ -203,8 +204,10 @@ def launch_setup(context):
                     f"No saved map '{slam_map}'. Build one with slam:=mapping, save it "
                     '(finish_trajectory + write_state), then colcon build, or pass slam_map:=<file.pbstream>')
             # Put the car where mapping started: the new trajectory begins at the map origin
+            # The trajectory is started below with the known start pose instead of automatically
             arguments += ['-configuration_basename', 'cartographer_2d_localization.lua',
-                          '-load_state_filename', slam_map]
+                          '-load_state_filename', slam_map,
+                          '-start_trajectory_with_default_topics=false']
         actions += [
             Node(
                 package='cartographer_ros',
@@ -224,6 +227,24 @@ def launch_setup(context):
                 parameters=[{'use_sim_time': USE_SIM_TIME}],
             ),
         ]
+        if slam == 'localization':
+            # Start localization AT the known start pose: map origin (= where mapping started =
+            # the track's start pose), relative to the saved map's trajectory 0. Without it,
+            # Cartographer searches the whole map and can snap to a look-alike spot.
+            # 'ros2 service call' waits until cartographer_node is ready.
+            start_request = (
+                f"{{configuration_directory: '{config_dir}', "
+                "configuration_basename: 'cartographer_2d_localization.lua', "
+                'use_initial_pose: true, '
+                'initial_pose: {position: {x: 0.0, y: 0.0, z: 0.0}, '
+                'orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, '
+                'relative_to_trajectory_id: 0}'
+            )
+            actions.append(ExecuteProcess(
+                cmd=['ros2', 'service', 'call', f'/{prefix}start_trajectory',
+                     'cartographer_ros_msgs/srv/StartTrajectory', start_request],
+                output='screen',
+            ))
 
     # ------------------------------------------------------------------------ EKF
     if use_ekf:
@@ -237,6 +258,20 @@ def launch_setup(context):
         if not use_imu:
             ekf_overrides['imu0_config'] = [False] * 15
         actions += [
+            # IMU preprocessing (startup calibration + ZUPT gyro bias): imu -> imu/filtered.
+            # Real car: also remove suspension tilt and filter BNO055 spikes/noise.
+            Node(
+                package='arcsf1tenth_localization',
+                executable='imu_filter.py',
+                namespace=namespace,
+                output='screen',
+                parameters=[imu_filter_config, {
+                    'use_sim_time': USE_SIM_TIME,
+                    'project_to_horizontal': True,
+                    'gyro_median_window': 3,
+                    'gyro_ma_window': 5,
+                }],
+            ),
             # robot_localization EKF: odometry/wheel + imu -> odometry/estimated + odom TF
             Node(
                 package='robot_localization',

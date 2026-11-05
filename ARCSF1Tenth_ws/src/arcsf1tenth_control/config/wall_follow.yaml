@@ -3,9 +3,9 @@
 wall_follow:
   ros__parameters:
     side: left                  # wall to follow: left | right
-    desired_distance: 1.0       # [m] distance to keep from the wall
+    desired_distance: 1.1       # [m] distance to keep from the wall
     lookahead: 0.6              # [m] predict the wall distance this far ahead (more = smoother, cuts corners)
-    beam_angle: 0.7854          # [rad] angle between the perpendicular beam and the forward beam (45 deg)
+    beam_angle: 1.3317          # [rad] angle between the perpendicular beam and the forward beam (45 deg)
     beam_window: 0.035          # [rad] median over +-2 deg around each beam
 
     # PID on (predicted distance - desired_distance) -> steering angle

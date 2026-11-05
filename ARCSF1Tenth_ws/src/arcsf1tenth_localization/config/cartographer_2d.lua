@@ -44,7 +44,12 @@ options = {
 MAP_BUILDER.use_trajectory_builder_2d = true
 
 -- RPLidar C1 (arcsf1tenth_description/config/sensors.yaml)
-TRAJECTORY_BUILDER_2D.min_range = 0.05
+-- min_range: ignore points closer than the car body. The lidar sits 0.11 m ahead of the
+-- rear axle; the car outline reaches ~0.23 m (rear corners) to ~0.31 m (front corners)
+-- from it. Hits on the car itself (sensor 0.05 m minimum) were drawn into the map along
+-- the driven path as grey (half occupied) streaks in the middle of the track. A wall
+-- closer than 0.3 m to the lidar is a crash anyway.
+TRAJECTORY_BUILDER_2D.min_range = 0.3
 TRAJECTORY_BUILDER_2D.max_range = 12.0
 TRAJECTORY_BUILDER_2D.missing_data_ray_length = 3.0
 TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 1   -- one message = one full 360 deg scan
@@ -60,6 +65,7 @@ TRAJECTORY_BUILDER_2D.submaps.num_range_data = 35
 -- Global optimization / loop closure
 POSE_GRAPH.optimization_problem.huber_scale = 1e2
 POSE_GRAPH.optimize_every_n_nodes = 35
-POSE_GRAPH.constraint_builder.min_score = 0.65
+POSE_GRAPH.constraint_builder.min_score = 0.6
+POSE_GRAPH.constraint_builder.global_localization_min_score = 0.8
 
 return options
