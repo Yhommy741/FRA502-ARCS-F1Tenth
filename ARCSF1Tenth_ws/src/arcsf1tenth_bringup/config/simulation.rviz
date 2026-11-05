@@ -73,50 +73,6 @@ Visualization Manager:
       Alpha: 1
       Decay Time: 0
     - Class: rviz_default_plugins/Odometry
-      Name: Odometry measured (wheel)
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/odometry/measured
-        Depth: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-      Keep: 300
-      Position Tolerance: 0.1
-      Angle Tolerance: 0.1
-      Shape:
-        Value: Arrow
-        Color: 0; 220; 0
-        Alpha: 1
-        Shaft Length: 0.2
-        Shaft Radius: 0.01
-        Head Length: 0.06
-        Head Radius: 0.03
-      Covariance:
-        Value: false
-    - Class: rviz_default_plugins/Odometry
-      Name: Odometry estimated (EKF)
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/odometry/estimated
-        Depth: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-      Keep: 300
-      Position Tolerance: 0.1
-      Angle Tolerance: 0.1
-      Shape:
-        Value: Arrow
-        Color: 40; 120; 255
-        Alpha: 1
-        Shaft Length: 0.2
-        Shaft Radius: 0.01
-        Head Length: 0.06
-        Head Radius: 0.03
-      Covariance:
-        Value: false
-    - Class: rviz_default_plugins/Odometry
       Name: Ground truth
       Enabled: true
       Topic:

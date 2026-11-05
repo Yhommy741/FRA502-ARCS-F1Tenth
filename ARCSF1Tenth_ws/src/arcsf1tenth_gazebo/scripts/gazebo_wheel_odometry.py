@@ -24,7 +24,7 @@ def namespaced_frame(node, name):
     return f'{namespace}/{name}' if namespace else name
 
 
-class GazeboMeasureOdometry(Node):
+class GazeboWheelOdometry(Node):
     """Wheel odometry from the simulated drive, like vesc_to_odom on the real car.
 
     - speed: rear wheel joint velocities (the VESC measures motor speed)
@@ -32,13 +32,13 @@ class GazeboMeasureOdometry(Node):
       *command* through the servo slew-rate limit (a servo has no angle feedback)
     - pose: dead reckoning of the above
 
-    Publishes nav_msgs/Odometry on odometry/measured (odom -> base_footprint).
+    Publishes nav_msgs/Odometry on odometry/wheel (odom -> base_footprint).
     Publishes the odom -> base_footprint TF only when publish_tf is true (no EKF
     running); otherwise the EKF fuses this with the IMU and owns the TF.
     """
 
     def __init__(self):
-        super().__init__('gazebo_measure_odometry')
+        super().__init__('gazebo_wheel_odometry')
 
         # Vehicle geometry: must come from arcsf1tenth_description/config/vehicle.yaml
         for name in VEHICLE_PARAMS:
@@ -81,7 +81,7 @@ class GazeboMeasureOdometry(Node):
         self.x = self.y = self.yaw = 0.0
         self.last_stamp = None
 
-        self.odom_pub = self.create_publisher(Odometry, 'odometry/measured', 10)
+        self.odom_pub = self.create_publisher(Odometry, 'odometry/wheel', 10)
         self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
         self.create_subscription(AckermannDriveStamped, 'drive', self.drive_callback, 10)
         self.create_subscription(JointState, 'joint_states', self.joint_states_callback, 10)
@@ -151,9 +151,9 @@ def clamp(value, low, high):
 def main(args=None):
     rclpy.init(args=args)
     try:
-        node = GazeboMeasureOdometry()
+        node = GazeboWheelOdometry()
     except RuntimeError as error:
-        print(f'[gazebo_measure_odometry] {error}', file=sys.stderr)
+        print(f'[gazebo_wheel_odometry] {error}', file=sys.stderr)
         rclpy.try_shutdown()
         sys.exit(1)
     try:

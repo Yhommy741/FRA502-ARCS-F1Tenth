@@ -3,7 +3,7 @@
 Same interfaces as the simulation, so EKF, SLAM, planning and control run unchanged:
   scan                  sensor_msgs/LaserScan     lidar driver          (sim: gazebo_lidar)
   imu                   sensor_msgs/Imu           IMU driver            (sim: gazebo_imu)
-  odometry/measured     nav_msgs/Odometry         VESC wheel odometry   (sim: gazebo_measure_odometry)
+  odometry/wheel        nav_msgs/Odometry         VESC wheel odometry   (sim: gazebo_wheel_odometry)
   drive                 AckermannDriveStamped     -> VESC + steering MCU (sim: gazebo_drive)
 TF: <ns>/map -> <ns>/odom (Cartographer) -> <ns>/base_footprint (EKF) -> <ns>/base_link -> sensors.
 No 'world' frame on the real car.
@@ -142,7 +142,7 @@ def launch_setup(context):
 
         # TODO IMU: BNO055 -> imu (sensor_msgs/Imu), frame_id <ns>/imu, with the gyro
         #   covariance from sensors.yaml (imu.gyro_noise_std). Gyro yaw rate is the only
-        #   field the EKF uses. The bias is removed by imu_bias_correction (below).
+        #   field the EKF uses.
         # Node(
         #     package='<bno055 driver package>',
         #     executable='<bno055 driver node>',
@@ -152,8 +152,8 @@ def launch_setup(context):
         #     remappings=[('<driver imu topic>', 'imu')],
         # ),
 
-        # TODO VESC: motor speed -> odometry/measured (nav_msgs/Odometry, like
-        #   gazebo_measure_odometry: twist.linear.x = speed, linear.y = 0, angular.z =
+        # TODO VESC: motor speed -> odometry/wheel (nav_msgs/Odometry, like
+        #   gazebo_wheel_odometry: twist.linear.x = speed, linear.y = 0, angular.z =
         #   v*tan(steering)/wheelbase, with covariances), and drive -> motor command.
         #   Wheel radius, gear ratio, wheelbase: vehicle.yaml.
         # Node(package='<vesc driver package>', executable='<vesc driver>', namespace=namespace, ...),
@@ -237,15 +237,7 @@ def launch_setup(context):
         if not use_imu:
             ekf_overrides['imu0_config'] = [False] * 15
         actions += [
-            # Gyro bias removal while standing still (ZUPT): imu -> imu/corrected
-            Node(
-                package='arcsf1tenth_localization',
-                executable='imu_bias_correction.py',
-                namespace=namespace,
-                output='screen',
-                parameters=[{'use_sim_time': USE_SIM_TIME}],
-            ),
-            # robot_localization EKF: odometry/measured + imu/corrected -> odometry/estimated + odom TF
+            # robot_localization EKF: odometry/wheel + imu -> odometry/estimated + odom TF
             Node(
                 package='robot_localization',
                 executable='ekf_node',

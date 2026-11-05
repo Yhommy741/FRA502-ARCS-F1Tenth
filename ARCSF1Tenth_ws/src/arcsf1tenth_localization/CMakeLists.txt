@@ -25,13 +25,6 @@ find_package(rclpy REQUIRED)                	# python (optional)
 # Install Python Module
 ament_python_install_package(${PROJECT_NAME})
 
-# Install Python executables
-install(PROGRAMS
-  scripts/odom_eval.py
-  scripts/imu_bias_correction.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 ################ INSTALL LAUNCH, ETC #################
 install(DIRECTORY
   # add directories here

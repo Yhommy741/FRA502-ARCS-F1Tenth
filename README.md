@@ -8,8 +8,8 @@ wheel/IMU odometry with an EKF, lidar SLAM (slam_toolbox), and raceline generati
 | Package | Contents |
 |---|---|
 | `arcsf1tenth_description` | URDF/meshes, `config/vehicle.yaml` (geometry, limits), `config/sensors.yaml` (IMU BNO055, lidar RPLidar C1) |
-| `arcsf1tenth_gazebo` | Gazebo model plugins, bridge, simulated drivers: `gazebo_drive`, `gazebo_imu`, `gazebo_lidar`, `gazebo_measure_odometry`, `map_to_world.py` |
-| `arcsf1tenth_localization` | `ekf.py` (wheel odometry + IMU), `odom_eval.py` (score odometry vs Gazebo ground truth), `config/ekf.yaml`, `config/slam_toolbox.yaml` |
+| `arcsf1tenth_gazebo` | Gazebo model plugins, bridge, simulated drivers: `gazebo_drive`, `gazebo_imu`, `gazebo_lidar`, `gazebo_wheel_odometry`, `map_to_world.py` |
+| `arcsf1tenth_localization` | `ekf.py` (wheel odometry + IMU), `config/ekf.yaml`, `config/slam_toolbox.yaml` |
 | `arcsf1tenth_planning` | `generate_raceline.py`, `show_raceline.py` |
 | `arcsf1tenth_teleop` | `keyboard.py` |
 | `arcsf1tenth_tracks` | Tracks: `f1tenth_tracks/` (28 F1TENTH tracks), `lab_tracks/` (our own) |
@@ -93,14 +93,6 @@ Arguments: `speed_scale:=0.6` (fraction of the raceline speed), `raceline:=<file
 raceline or the pose is lost; Ctrl-C stops the car. RViz shows the raceline (magenta) and the
 lookahead point (orange).
 
-## Odometry evaluation (simulation)
-```bash
-ros2 run arcsf1tenth_localization odom_eval.py --ros-args -r __ns:=/arcsf1tenth -p use_sim_time:=true
-```
-Drive a lap, then Ctrl-C: prints pose error / drift of `odometry/measured` and `odometry/estimated`
-against `ground_truth/odometry`, the yaw rate error of each input (gyro, bicycle model, EKF) and the
-EKF gyro bias estimate vs the actual bias. Use it to tune `arcsf1tenth_localization/config/ekf.yaml`.
-
 ## SLAM
 
 Run every command from `ARCSF1Tenth_ws`. Set the track once per terminal; all paths below follow it
@@ -172,7 +164,7 @@ Each track folder needs a `track.yaml` with `start_pose: {x, y, yaw}`; see
 | Topic | Type | From |
 |---|---|---|
 | `/arcsf1tenth/drive` | `ackermann_msgs/AckermannDriveStamped` | teleop / controller |
-| `/arcsf1tenth/odometry/measured` | `nav_msgs/Odometry` | wheel odometry (speed + steering) |
+| `/arcsf1tenth/odometry/wheel` | `nav_msgs/Odometry` | wheel odometry (speed + steering) |
 | `/arcsf1tenth/odometry/estimated` | `nav_msgs/Odometry` | EKF (wheel odometry + IMU) |
 | `/arcsf1tenth/imu` | `sensor_msgs/Imu` | IMU |
 | `/arcsf1tenth/scan` | `sensor_msgs/LaserScan` | lidar |

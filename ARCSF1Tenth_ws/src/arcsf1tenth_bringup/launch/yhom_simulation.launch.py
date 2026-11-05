@@ -208,11 +208,11 @@ def launch_setup(context):
             parameters=[{'use_sim_time': True}],
         ),
 
-        # Wheel odometry (sim stand-in for the VESC's vesc_to_odom): odometry/measured.
+        # Wheel odometry (sim stand-in for the VESC's vesc_to_odom): odometry/wheel.
         # Owns the odom -> base_footprint TF unless the EKF runs.
         Node(
             package='arcsf1tenth_gazebo',
-            executable='gazebo_measure_odometry.py',
+            executable='gazebo_wheel_odometry.py',
             namespace=namespace,
             output='screen',
             parameters=[vehicle_config, {'use_sim_time': True, 'publish_tf': not use_ekf}],
@@ -288,16 +288,8 @@ def launch_setup(context):
         if not use_imu:
             ekf_overrides['imu0_config'] = [False] * 15
         actions += [
-            # Gyro bias removal while standing still (ZUPT): imu -> imu/corrected
-            Node(
-                package='arcsf1tenth_localization',
-                executable='imu_bias_correction.py',
-                namespace=namespace,
-                output='screen',
-                parameters=[{'use_sim_time': True}],
-            ),
             # robot_localization EKF (15-state general model):
-            # odometry/measured + imu/corrected -> odometry/estimated + TF odom -> base_footprint
+            # odometry/wheel + imu -> odometry/estimated + TF odom -> base_footprint
             Node(
                 package='robot_localization',
                 executable='ekf_node',
@@ -333,7 +325,7 @@ def generate_launch_description():
             'use_ekf',
             default_value='true',
             description='Run the robot_localization EKF (odometry/estimated + odom TF); '
-                        'false = measured odometry owns the TF',
+                        'false = wheel odometry owns the TF',
         ),
         DeclareLaunchArgument(
             'use_imu',

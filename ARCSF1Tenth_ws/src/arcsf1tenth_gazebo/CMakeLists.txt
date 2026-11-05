@@ -30,7 +30,7 @@ install(PROGRAMS
   scripts/gazebo_drive.py
   scripts/gazebo_imu.py
   scripts/gazebo_lidar.py
-  scripts/gazebo_measure_odometry.py
+  scripts/gazebo_wheel_odometry.py
   scripts/map_to_world.py
   DESTINATION lib/${PROJECT_NAME}
 )
