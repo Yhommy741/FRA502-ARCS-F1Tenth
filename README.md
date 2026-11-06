@@ -1,8 +1,9 @@
 # FRA502-ARCS-F1Tenth
 
 ROS 2 Jazzy + Gazebo Harmonic simulation of the ARCS F1Tenth car: keyboard teleop,
-wheel/IMU odometry fused by a robot_localization EKF, lidar mapping (Cartographer), localization (AMCL), raceline
-generation, wall following and pure pursuit. A real-car bringup template uses the same interfaces.
+wheel/IMU odometry fused by a robot_localization EKF, lidar mapping (Cartographer), localization (AMCL),
+raceline generation, wall following, pure pursuit, click-to-place obstacles and Frenet optimal
+obstacle avoidance. A real-car bringup template uses the same interfaces.
 
 ## Packages (`ARCSF1Tenth_ws/src`)
 
@@ -11,7 +12,8 @@ generation, wall following and pure pursuit. A real-car bringup template uses th
 | `arcsf1tenth_description` | URDF/meshes, `config/vehicle.yaml` (geometry, limits, footprint), `config/sensors.yaml` (IMU BNO055, lidar RPLidar C1) |
 | `arcsf1tenth_gazebo` | Gazebo model plugins, bridge, simulated drivers: `gazebo_drive`, `gazebo_imu`, `gazebo_lidar`, `gazebo_wheel_odometry`, `map_to_world.py` |
 | `arcsf1tenth_localization` | `imu_filter.py` (gyro bias calibration + ZUPT), `save_map.py`, `scan_for_slam.py`, `localization_error.py`, `config/ekf.yaml` (robot_localization), `config/imu_filter.yaml`, `config/cartographer_2d.lua` (mapping), `config/amcl.yaml` (localization) |
-| `arcsf1tenth_planning` | `generate_raceline.py`, `show_raceline.py` |
+| `arcsf1tenth_planning` | Offline: `generate_raceline.py`, `show_raceline.py`. Online (shared): `frenet_node.py` (Frenet frame, track widths), `obstacle_detector.py`. yhom: `yhom_local_planner.py` (Frenet optimal), `yhom_state_machine.py`. Libraries `frenet.py`, `frenet_optimal.py`; `config/frenet.yaml`, `config/yhom_planner.yaml` |
+| `arcsf1tenth_interfaces` | Messages: `FrenetState`, `Waypoint`, `Trajectory`, `Obstacle`, `ObstacleArray` |
 | `arcsf1tenth_teleop` | `keyboard.py` |
 | `arcsf1tenth_tracks` | Tracks: `f1tenth_tracks/` (F1TENTH tracks), `lab_tracks/` (our own) |
 | `arcsf1tenth_bringup` | Launch files and RViz configs |
@@ -27,6 +29,7 @@ sudo apt install ros-jazzy-ros-gz ros-jazzy-xacro ros-jazzy-ackermann-msgs \
     ros-jazzy-nav2-amcl ros-jazzy-nav2-map-server ros-jazzy-nav2-lifecycle-manager \
     python3-opencv python3-scipy python3-matplotlib
 ```
+(or the whole Nav2 stack: `ros-jazzy-navigation2 ros-jazzy-nav2-bringup`)
 
 ## Build
 
@@ -36,7 +39,8 @@ colcon build
 source install/setup.bash
 ```
 
-Run `source install/setup.bash` in every new terminal, and again after adding a new package.
+Run `source install/setup.bash` in every new terminal, and again after adding a new package
+(otherwise e.g. `ModuleNotFoundError: No module named 'arcsf1tenth_interfaces'`).
 
 ## Run
 
@@ -105,23 +109,57 @@ in `arcsf1tenth_applications`):
    ros2 service call /arcsf1tenth/clear_obstacles std_srvs/srv/Trigger
    ```
 The tool is single-click: pick it again for the next obstacle. Obstacles are static, solid and seen
-by the lidar, but they are not in the saved map, and the controllers do not avoid them yet.
+by the lidar, but they are not in the saved map: `yhom_controller` detects and avoids them,
+`non_controller` (plain pure pursuit) drives into them.
 Shape and size: node parameters `shape` (`box` | `cylinder`), `size`, `height`, `remove_radius`.
 
 ## Controllers (one launch file per group member)
 Each member has an own controller launch, so controllers and planning can be changed and compared
-without touching the other one. Both currently run pure pursuit on the centerline:
+without touching the other one:
 
 | Launch | Owner | Now |
 |---|---|---|
-| `yhom_controller.launch.py` | yhom | pure pursuit, centerline |
-| `non_controller.launch.py` | non | pure pursuit, centerline |
+| `yhom_controller.launch.py` | yhom | state machine: centerline, or Frenet optimal path around obstacles; pure pursuit |
+| `non_controller.launch.py` | non | pure pursuit on the centerline |
 
-Needs a centerline for the track (see [Raceline](#raceline)). In a second terminal, with the simulation running:
+Needs a centerline for the track (see [Raceline](#raceline)) and `slam:=localization`. In a second
+terminal, with the simulation running:
 ```bash
+ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=localization
 ros2 launch arcsf1tenth_bringup yhom_controller.launch.py track:=<map_name>   # or non_controller.launch.py
 ```
 Run only one controller (or the keyboard teleop) at a time: they all publish `drive`.
+
+### yhom: obstacle avoidance
+```
+centerline CSV + map ─► frenet_node ─────── global_trajectory, frenet/state      (shared)
+scan + map ──────────► obstacle_detector ── obstacles (Frenet s/d extent)         (shared)
+                       yhom_local_planner ─ yhom/local_trajectory  (Frenet optimal path)
+                       yhom_state_machine ─ yhom/trajectory ─► pure_pursuit ─► drive
+```
+- **Frenet frame** (`frenet_node`): `s` = distance along the centerline, `d` = sideways offset
+  (left positive). Also measures the free track width left/right of the centerline from the map.
+- **Obstacle detection** (`obstacle_detector`): lidar points not on a wall of the saved map
+  (further than `wall_margin` = 0.3 m from it), clustered and converted to Frenet. An obstacle
+  closer than that to a wall is not seen.
+- **Local planner** (`yhom_local_planner`, 10 Hz): samples lateral paths d(s) (quintic from the car
+  to a target offset over 3-8 m, then hold), rejects those leaving the track, hitting an obstacle
+  (car outline + `obstacle_margin`) or too curvy to steer, picks the cheapest
+  (smoothness + offset + clearance + consistency).
+- **State machine** (`yhom_state_machine`, 20 Hz):
+
+  | State | Car follows | Leaves when |
+  |---|---|---|
+  | `GLOBAL` | centerline | obstacle on the centerline ahead → `AVOID` (path found) or `BLOCKED` |
+  | `AVOID` | local planner path | obstacle passed and car back on the centerline → `GLOBAL`; no path → `BLOCKED` |
+  | `BLOCKED` | centerline, braking to a stop 1 m before the obstacle | a path appears → `AVOID`; obstacle gone → `GLOBAL` |
+
+RViz shows the state above the car, the local path (orange), the detected obstacles (red) and the
+track bounds (blue). Topics: `/arcsf1tenth/yhom/state`, `yhom/trajectory`, `yhom/local_trajectory`.
+Tuning: `arcsf1tenth_planning/config/yhom_planner.yaml` (planner and state machine, commented),
+`arcsf1tenth_planning/config/frenet.yaml` (Frenet frame, obstacle detection),
+`arcsf1tenth_control/config/pure_pursuit.yaml` (path following). Argument `line:=raceline` uses the
+raceline as the global path.
 
 ### Pure pursuit
 By default it follows the centerline, `<map_name>/maps/sim/cartographer_map_centerline.csv`
@@ -130,10 +168,14 @@ With `line:=raceline` it uses `cartographer_map_raceline.csv`, otherwise the ori
 `raceline.csv` (Gazebo `world` frame, simulation only, works with `slam:=off`).
 
 Arguments: `line:=centerline|raceline` (default `centerline`),
-`speed_scale:=0.6` (fraction of the raceline speed), `raceline:=<file.csv>` + `raceline_frame:=<frame>`
-for another file, `use_sim_time:=false` on the real car. Tuning (lookahead, speed limits) in
-`arcsf1tenth_control/config/pure_pursuit.yaml`. It stops when the car is more than 1 m off the
-line or the pose is lost; Ctrl-C stops the car. RViz shows the raceline and the lookahead point.
+`speed_scale:=<fraction>` (of the path speed, default from `pure_pursuit.yaml`), `raceline:=<file.csv>` +
+`raceline_frame:=<frame>` for another file, `use_sim_time:=false` on the real car. Tuning (lookahead,
+speed limits) in `arcsf1tenth_control/config/pure_pursuit.yaml`. It stops when the car is more than 1 m
+off the line or the pose is lost; Ctrl-C stops the car. RViz shows the raceline and the lookahead point.
+
+With the parameter `trajectory_topic` (used by `yhom_controller`), pure pursuit follows an
+`arcsf1tenth_interfaces/Trajectory` topic instead of a CSV: replaced on every message, speed 0 = stop,
+empty or stale (> 0.5 s) = stop.
 
 ## Mapping (Cartographer) and localization (AMCL)
 
@@ -220,6 +262,13 @@ Each track folder needs a `track.yaml` with `start_pose: {x, y, yaw}`; see
 | `/arcsf1tenth/map` | `nav_msgs/OccupancyGrid` | Cartographer occupancy grid node (mapping), `map_server` (AMCL localization) |
 | `/arcsf1tenth/amcl_pose` | `geometry_msgs/PoseWithCovarianceStamped` | AMCL pose estimate |
 | `/arcsf1tenth/ground_truth/odometry` | `nav_msgs/Odometry` | Gazebo true pose (sim only) |
+| `/clicked_point` | `geometry_msgs/PointStamped` | RViz Publish Point → `obstacle_spawner` |
+| `/arcsf1tenth/global_trajectory` | `arcsf1tenth_interfaces/Trajectory` | `frenet_node`: global path with speeds and track widths (latched) |
+| `/arcsf1tenth/frenet/state` | `arcsf1tenth_interfaces/FrenetState` | `frenet_node`: car `s`, `d`, `s_dot`, `d_dot`, heading error |
+| `/arcsf1tenth/obstacles` | `arcsf1tenth_interfaces/ObstacleArray` | `obstacle_detector` |
+| `/arcsf1tenth/yhom/local_trajectory` | `arcsf1tenth_interfaces/Trajectory` | `yhom_local_planner` (empty = no path) |
+| `/arcsf1tenth/yhom/trajectory` | `arcsf1tenth_interfaces/Trajectory` | `yhom_state_machine` → pure pursuit |
+| `/arcsf1tenth/yhom/state` | `std_msgs/String` | `yhom_state_machine`: `GLOBAL` / `AVOID` / `BLOCKED` |
 
 TF: `world` → `arcsf1tenth/map` → `arcsf1tenth/odom` → `arcsf1tenth/base_footprint` → `arcsf1tenth/base_link` → sensors and wheels.
 `world` exists only in simulation (`world -> map` = the track's start pose); `map -> odom` comes from
