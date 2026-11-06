@@ -17,7 +17,7 @@ Pipeline:
                   and braking limits (for both lines)
 
 Outputs (next to the map unless --out-dir), in the map frame, same format for both
-(pure_pursuit.launch.py line:=centerline | raceline):
+(yhom_controller.launch.py / non_controller.launch.py line:=centerline | raceline):
   <map>_centerline.csv   s_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2
   <map>_raceline.csv     s_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2
   <map>_raceline.png     check picture (--show also opens it in a window;

@@ -186,7 +186,7 @@ def main():
     else:
         print('install/ copy skipped: run colcon build --packages-select arcsf1tenth_tracks')
 
-    launch = 'yhom_simulation' if sim else 'yhom_real'
+    launch = 'simulation' if sim else 'real'
     print(f'\ndone. Next:\n'
           f'  ros2 run arcsf1tenth_planning generate_raceline.py {args.track}\n'
           f'  ros2 launch arcsf1tenth_bringup {launch}.launch.py track:={args.track} slam:=localization')

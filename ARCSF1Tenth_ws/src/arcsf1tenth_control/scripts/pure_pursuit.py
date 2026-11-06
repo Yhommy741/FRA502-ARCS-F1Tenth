@@ -58,7 +58,7 @@ class PurePursuit(Node):
         if missing:
             raise RuntimeError(
                 f'Missing vehicle parameters {missing}. Start it with: '
-                'ros2 launch arcsf1tenth_bringup pure_pursuit.launch.py track:=<map_name>'
+                'ros2 launch arcsf1tenth_bringup yhom_controller.launch.py track:=<map_name> (or non_controller)'
             )
 
         self.declare_parameter('raceline', '')               # raceline CSV path
@@ -89,7 +89,7 @@ class PurePursuit(Node):
 
         path = p('raceline')
         if not path:
-            raise RuntimeError('No raceline: set -p raceline:=<file.csv> or use pure_pursuit.launch.py track:=<map_name>')
+            raise RuntimeError('No raceline: set -p raceline:=<file.csv> or use yhom_controller.launch.py / non_controller.launch.py track:=<map_name>')
         data = np.loadtxt(path, delimiter=';', comments='#', ndmin=2)
         if data.shape[1] < 6:
             raise RuntimeError(f'{path}: expected columns s; x; y; psi; kappa; vx; ...')

@@ -11,9 +11,9 @@ No 'world' frame on the real car.
 TODO blocks below mark the hardware drivers to fill in (see the 'TODO' comments).
 
 Usage:
-  ros2 launch arcsf1tenth_bringup non_real.launch.py                                  # drivers + EKF only
-  ros2 launch arcsf1tenth_bringup non_real.launch.py track:=lab_track slam:=mapping
-  ros2 launch arcsf1tenth_bringup non_real.launch.py track:=lab_track slam:=localization
+  ros2 launch arcsf1tenth_bringup real.launch.py                                  # drivers + EKF only
+  ros2 launch arcsf1tenth_bringup real.launch.py track:=lab_track slam:=mapping
+  ros2 launch arcsf1tenth_bringup real.launch.py track:=lab_track slam:=localization
 Real maps are saved in <track>/maps/real/ (separate from the simulation maps in maps/sim/).
 """
 

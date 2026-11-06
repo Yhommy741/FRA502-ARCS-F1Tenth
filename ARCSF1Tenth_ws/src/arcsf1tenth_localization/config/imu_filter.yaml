@@ -9,7 +9,7 @@
 #   2. ZUPT (zero-velocity update): every later standstill refreshes the bias
 #      (follows BNO055 warm-up / temperature drift)
 #   3. measured variances -> message covariance (EKF weighting)
-# Simulation defaults below. Real car (yhom_real / non_real launch) also turns on:
+# Simulation defaults below. Real car (real.launch.py) also turns on:
 #   project_to_horizontal: true    (suspension roll/pitch removed from the yaw rate)
 #   gyro_median_window: 3          (spike rejection)
 #   gyro_ma_window: 5              (noise smoothing, ~20 ms delay at 100 Hz)

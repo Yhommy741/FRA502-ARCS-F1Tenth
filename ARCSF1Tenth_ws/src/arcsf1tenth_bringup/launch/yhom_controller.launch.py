@@ -1,3 +1,16 @@
+"""yhom's controller: pure pursuit following the track centerline (for now).
+
+Run on top of the simulation (or real car) launch, in a second terminal:
+  ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=localization
+  ros2 launch arcsf1tenth_bringup yhom_controller.launch.py track:=<map_name>
+
+Path: <track>/maps/sim/cartographer_map_centerline.csv (generate_raceline.py), in the map frame.
+line:=raceline follows the minimum-curvature raceline instead.
+Each group member has an own controller launch (yhom_controller / non_controller):
+change controllers and planning here without touching the other one. Run only one
+controller at a time: all of them publish <namespace>/drive.
+"""
+
 import glob
 import os
 

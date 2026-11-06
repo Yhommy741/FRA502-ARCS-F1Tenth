@@ -3,7 +3,7 @@
 Tracks imported from official F1TENTH repositories. Sim only (no real map).
 Each track keeps the license of its source in its own `LICENSE` file.
 
-Launch with `ros2 launch arcsf1tenth_bringup yhom_simulation.launch.py track:=<folder>` (or `non_simulation.launch.py`).
+Launch with `ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<folder>`.
 
 | Folder | Track | Source | Paths | License |
 |---|---|---|---|---|

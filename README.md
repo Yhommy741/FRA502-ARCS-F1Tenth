@@ -49,9 +49,8 @@ ros2 launch arcsf1tenth_bringup display.launch.py
 
 ### Simulation
 ```bash
-ros2 launch arcsf1tenth_bringup yhom_simulation.launch.py track:=<map_name>
+ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name>
 ```
-`non_simulation.launch.py` is currently an identical copy.
 
 | Argument | Default | Meaning |
 |---|---|---|
@@ -69,13 +68,13 @@ A wrong track name prints the list of available tracks.
 
 ### Real car (template)
 ```bash
-ros2 launch arcsf1tenth_bringup yhom_real.launch.py                                   # drivers + EKF only
-ros2 launch arcsf1tenth_bringup yhom_real.launch.py track:=<map_name> slam:=mapping
-ros2 launch arcsf1tenth_bringup yhom_real.launch.py track:=<map_name> slam:=localization
+ros2 launch arcsf1tenth_bringup real.launch.py                                        # drivers + EKF only
+ros2 launch arcsf1tenth_bringup real.launch.py track:=<map_name> slam:=mapping
+ros2 launch arcsf1tenth_bringup real.launch.py track:=<map_name> slam:=localization
 ```
 Same topics as the simulation, no Gazebo and no `world` frame. The hardware drivers (RPLidar, BNO055,
 VESC, steering MCU over micro-ROS) are still `TODO` blocks in the launch file. Real maps live in
-`<map_name>/maps/real/`. Extra argument: `rviz:=false` for headless. `non_real.launch.py` is a copy.
+`<map_name>/maps/real/`. Extra argument: `rviz:=false` for headless.
 
 ### Drive with the keyboard (second terminal)
 ```bash
@@ -95,11 +94,22 @@ Arguments: `side:=left|right`, `desired_distance:=<m>`, `speed_max:=<m/s>`, `nam
 `arcsf1tenth_control/config/wall_follow.yaml`. Ctrl-C stops the car.
 Don't run the keyboard teleop at the same time (both publish `drive`).
 
-## Pure pursuit (follow the raceline)
-Needs a raceline for the track (see [Raceline](#raceline)). In a second terminal, with the simulation running:
+## Controllers (one launch file per group member)
+Each member has an own controller launch, so controllers and planning can be changed and compared
+without touching the other one. Both currently run pure pursuit on the centerline:
+
+| Launch | Owner | Now |
+|---|---|---|
+| `yhom_controller.launch.py` | yhom | pure pursuit, centerline |
+| `non_controller.launch.py` | non | pure pursuit, centerline |
+
+Needs a centerline for the track (see [Raceline](#raceline)). In a second terminal, with the simulation running:
 ```bash
-ros2 launch arcsf1tenth_bringup pure_pursuit.launch.py track:=<map_name>
+ros2 launch arcsf1tenth_bringup yhom_controller.launch.py track:=<map_name>   # or non_controller.launch.py
 ```
+Run only one controller (or the keyboard teleop) at a time: they all publish `drive`.
+
+### Pure pursuit
 By default it follows the centerline, `<map_name>/maps/sim/cartographer_map_centerline.csv`
 (Cartographer map frame: run the simulation with `slam:=localization` so the car is localized on that map).
 With `line:=raceline` it uses `cartographer_map_raceline.csv`, otherwise the original F1TENTH
@@ -119,7 +129,7 @@ Cartographer reads `scan/slam` (`scan_for_slam.py`: no-return beams kept as free
 
 ### 1. Build a map
 ```bash
-ros2 launch arcsf1tenth_bringup yhom_simulation.launch.py track:=<map_name> slam:=mapping
+ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=mapping
 ros2 run arcsf1tenth_teleop keyboard.py
 ```
 Drive slowly (0.4-0.6 m/s) around the whole loop and finish where you started (loop closure).
@@ -136,7 +146,7 @@ Other namespace: `--ros-args -r __ns:=/<namespace>`.
 
 ### 3. Localize on the saved map
 ```bash
-ros2 launch arcsf1tenth_bringup yhom_simulation.launch.py track:=<map_name> slam:=localization
+ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=localization
 ```
 AMCL (particle filter) loads `cartographer_map.yaml` with `map_server` and corrects `map -> odom` on every
 scan; the map is fixed and never redrawn. The car must start where mapping started (the track's start
