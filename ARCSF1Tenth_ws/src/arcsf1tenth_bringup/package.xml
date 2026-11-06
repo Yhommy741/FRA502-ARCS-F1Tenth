@@ -21,6 +21,9 @@
   <exec_depend>arcsf1tenth_control</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>cartographer_ros</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
   <exec_depend>robot_localization</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>

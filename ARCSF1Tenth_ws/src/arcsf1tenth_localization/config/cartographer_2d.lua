@@ -46,12 +46,18 @@ MAP_BUILDER.use_trajectory_builder_2d = true
 -- RPLidar C1 (arcsf1tenth_description/config/sensors.yaml)
 -- min_range: ignore points closer than the car body. The lidar sits 0.11 m ahead of the
 -- rear axle; the car outline reaches ~0.23 m (rear corners) to ~0.31 m (front corners)
--- from it. Hits on the car itself (sensor 0.05 m minimum) were drawn into the map along
--- the driven path as grey (half occupied) streaks in the middle of the track. A wall
+-- from it, so a real lidar can hit the car itself (the simulated one does not). A wall
 -- closer than 0.3 m to the lidar is a crash anyway.
 TRAJECTORY_BUILDER_2D.min_range = 0.3
-TRAJECTORY_BUILDER_2D.max_range = 12.0
-TRAJECTORY_BUILDER_2D.missing_data_ray_length = 3.0
+-- "No return" beams: scan_for_slam.py (scan -> scan/slam) turns inf into the lidar
+-- range_max (12.0). max_range just below it makes Cartographer treat those beams as
+-- "no wall" and mark missing_data_ray_length of free space along them. Without this,
+-- inf beams were dropped: on straights longer than 12 m nothing marked the cells along
+-- the driven path as free, and they stayed light grey.
+-- 5 m, not 11.9: the RPLidar C1 sees dark (10 % reflectivity) surfaces only up to ~6 m,
+-- a longer free ray could erase such a wall on the real car.
+TRAJECTORY_BUILDER_2D.max_range = 11.9
+TRAJECTORY_BUILDER_2D.missing_data_ray_length = 5.0
 TRAJECTORY_BUILDER_2D.num_accumulated_range_data = 1   -- one message = one full 360 deg scan
 TRAJECTORY_BUILDER_2D.use_imu_data = false
 

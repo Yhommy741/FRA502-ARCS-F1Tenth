@@ -237,37 +237,95 @@ def launch_setup(context):
             arguments=['--frame-id', f'{prefix}map', '--child-frame-id', f'{prefix}odom'],
             parameters=[{'use_sim_time': True}],
         ))
+    elif slam == 'localization':
+        # AMCL particle filter on the saved map IMAGE: corrects map -> odom, never redraws
+        # the map (Cartographer only builds it). Map frame = the Cartographer map frame:
+        # origin = where mapping started = the track start pose, so the car starts at 0 0 0.
+        if not slam_map:
+            if track_dir is None:
+                raise RuntimeError('slam:=localization needs track:=<name> or slam_map:=<map.yaml>')
+            slam_map = os.path.join(track_dir, 'maps', 'sim', 'cartographer_map.yaml')
+        elif not slam_map.endswith('.yaml'):
+            slam_map = os.path.splitext(slam_map)[0] + '.yaml'  # accept the map stem
+        if not os.path.isfile(slam_map):
+            raise RuntimeError(
+                f"No saved map '{slam_map}'. Build one with slam:=mapping and save_map.py, "
+                'or pass slam_map:=<map.yaml>')
+        actions += [
+            # saved map image -> map topic (latched, fixed)
+            Node(
+                package='nav2_map_server',
+                executable='map_server',
+                name='map_server',
+                namespace=namespace,
+                output='screen',
+                parameters=[{
+                    'use_sim_time': True,
+                    'yaml_filename': slam_map,
+                    'topic_name': 'map',
+                    'frame_id': f'{prefix}map',
+                }],
+            ),
+            # scan + odom TF + map -> TF map -> odom, amcl_pose (tuning: config/amcl.yaml)
+            Node(
+                package='nav2_amcl',
+                executable='amcl',
+                name='amcl',
+                namespace=namespace,
+                output='screen',
+                parameters=[os.path.join(localization_pkg, 'config', 'amcl.yaml'), {
+                    'use_sim_time': True,
+                    'global_frame_id': f'{prefix}map',
+                    'odom_frame_id': f'{prefix}odom',
+                    'base_frame_id': f'{prefix}base_footprint',
+                    'scan_topic': 'scan',
+                    'map_topic': 'map',
+                    # start pose = map origin (where mapping started)
+                    'set_initial_pose': True,
+                    'initial_pose.x': 0.0,
+                    'initial_pose.y': 0.0,
+                    'initial_pose.z': 0.0,
+                    'initial_pose.yaw': 0.0,
+                }],
+            ),
+            # Nav2 nodes are lifecycle nodes: this configures + activates them
+            Node(
+                package='nav2_lifecycle_manager',
+                executable='lifecycle_manager',
+                name='lifecycle_manager_localization',
+                namespace=namespace,
+                output='screen',
+                parameters=[{
+                    'use_sim_time': True,
+                    'autostart': True,
+                    'node_names': ['map_server', 'amcl'],
+                }],
+            ),
+        ]
     else:
-        # Cartographer publishes map -> odom (drift correction); the occupancy grid node
-        # turns its submaps into the map topic. Odometry input = the EKF output.
+        # slam:=mapping: Cartographer builds the map and publishes map -> odom (drift
+        # correction); the occupancy grid node turns its submaps into the map topic.
+        # Odometry input = the EKF output. Save with save_map.py.
         config_dir = namespaced_cartographer_configs(os.path.join(localization_pkg, 'config'), namespace)
         arguments = ['-configuration_directory', config_dir]
-        if slam == 'mapping':
-            arguments += ['-configuration_basename', 'cartographer_2d.lua']
-        else:
-            if not slam_map:
-                if track_dir is None:
-                    raise RuntimeError('slam:=localization needs slam_map:=<path to the saved .pbstream>')
-                slam_map = os.path.join(track_dir, 'maps', 'sim', 'cartographer_map')
-            if not slam_map.endswith('.pbstream'):
-                slam_map += '.pbstream'
-            if not os.path.isfile(slam_map):
-                raise RuntimeError(
-                    f"No saved map '{slam_map}'. Build one with slam:=mapping, save it "
-                    '(finish_trajectory + write_state), then colcon build, or pass slam_map:=<file.pbstream>')
-            # Car starts where mapping started: the new trajectory begins at the map origin
-            # The trajectory is started below with the known start pose instead of automatically
-            arguments += ['-configuration_basename', 'cartographer_2d_localization.lua',
-                          '-load_state_filename', slam_map,
-                          '-start_trajectory_with_default_topics=false']
+        arguments += ['-configuration_basename', 'cartographer_2d.lua']
         actions += [
+            # scan -> scan/slam: "no return" (inf) beams become range_max, so Cartographer
+            # marks free space along them (cartographer_2d.lua max_range / missing_data_ray_length)
+            Node(
+                package='arcsf1tenth_localization',
+                executable='scan_for_slam.py',
+                namespace=namespace,
+                output='screen',
+                parameters=[{'use_sim_time': True}],
+            ),
             Node(
                 package='cartographer_ros',
                 executable='cartographer_node',
                 namespace=namespace,
                 output='screen',
                 arguments=arguments,
-                remappings=[('odom', 'odometry/estimated')],
+                remappings=[('odom', 'odometry/estimated'), ('scan', 'scan/slam')],
                 parameters=[{'use_sim_time': True}],
             ),
             Node(
@@ -279,24 +337,6 @@ def launch_setup(context):
                 parameters=[{'use_sim_time': True}],
             ),
         ]
-        if slam == 'localization':
-            # Start localization AT the known start pose: map origin (= where mapping started =
-            # the track's start pose), relative to the saved map's trajectory 0. Without it,
-            # Cartographer searches the whole map and can snap to a look-alike spot.
-            # 'ros2 service call' waits until cartographer_node is ready.
-            start_request = (
-                f"{{configuration_directory: '{config_dir}', "
-                "configuration_basename: 'cartographer_2d_localization.lua', "
-                'use_initial_pose: true, '
-                'initial_pose: {position: {x: 0.0, y: 0.0, z: 0.0}, '
-                'orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, '
-                'relative_to_trajectory_id: 0}'
-            )
-            actions.append(ExecuteProcess(
-                cmd=['ros2', 'service', 'call', f'/{prefix}start_trajectory',
-                     'cartographer_ros_msgs/srv/StartTrajectory', start_request],
-                output='screen',
-            ))
 
     if use_ekf:
         ekf_overrides = {
@@ -369,13 +409,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'slam',
             default_value='off',
-            description='Cartographer SLAM: off | mapping (build a new map) | localization (on a saved map)',
+            description='off | mapping (Cartographer builds a new map) | localization (AMCL on a saved map)',
         ),
         DeclareLaunchArgument(
             'slam_map',
             default_value='',
-            description='Saved Cartographer map for slam:=localization '
-                        '(default: <track>/maps/sim/cartographer_map.pbstream)',
+            description='Saved map yaml for slam:=localization (AMCL) '
+                        '(default: <track>/maps/sim/cartographer_map.yaml)',
         ),
         DeclareLaunchArgument(
             'follow_camera',

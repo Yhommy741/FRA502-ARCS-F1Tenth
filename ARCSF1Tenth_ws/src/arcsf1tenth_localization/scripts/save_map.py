@@ -4,14 +4,15 @@
   ros2 run arcsf1tenth_localization save_map.py austin
 
   - sim or real is detected automatically: Gazebo running (/clock) -> maps/sim/, else maps/real/
-  - always (over)writes <track>/maps/<sim|real>/cartographer_map.{pbstream,pgm,yaml}
+  - always (over)writes <track>/maps/<sim|real>/cartographer_map.{pgm,yaml}
   - namespace: arcsf1tenth (other: --ros-args -r __ns:=/<ns>)
 
 Steps:
   1. finish the active mapping trajectory (final optimization, loop closure)
-  2. cartographer_map.pbstream            Cartographer state, used by slam:=localization
-  3. cartographer_map.pgm + .yaml         map image from the map topic
-  4. copy into install/ as well, so no colcon build is needed before localization
+  2. cartographer_map.pgm + .yaml         map image from the map topic, used by AMCL
+                                          (slam:=localization) and generate_raceline.py
+  3. copy into install/ as well, so no colcon build is needed before localization
+Cartographer is only used for mapping, so its state (.pbstream) is not saved.
 Files are written to the SOURCE tree (src/arcsf1tenth_tracks), so they are kept in git.
 Raceline afterwards:  ros2 run arcsf1tenth_planning generate_raceline.py <track>
 """
@@ -28,7 +29,7 @@ import numpy as np
 import rclpy
 from ament_index_python.packages import PackageNotFoundError, get_package_prefix, get_package_share_directory
 from cartographer_ros_msgs.msg import TrajectoryStates
-from cartographer_ros_msgs.srv import FinishTrajectory, GetTrajectoryStates, WriteState
+from cartographer_ros_msgs.srv import FinishTrajectory, GetTrajectoryStates
 from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -70,7 +71,6 @@ class Saver(Node):
         ns = self.get_namespace().rstrip('/')
         self.get_states = self.create_client(GetTrajectoryStates, f'{ns}/get_trajectory_states')
         self.finish = self.create_client(FinishTrajectory, f'{ns}/finish_trajectory')
-        self.write = self.create_client(WriteState, f'{ns}/write_state')
         self.map_msg = None
         self.map_time = None
         qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -153,9 +153,6 @@ def main():
     # 1. finish the active mapping trajectory
     states = node.call(node.get_states, GetTrajectoryStates.Request()).trajectory_states
     by_id = dict(zip(states.trajectory_id, states.trajectory_state))
-    if TrajectoryStates.FROZEN in by_id.values():
-        fail('Cartographer is in localization mode (a frozen saved map is loaded). '
-             'Saving only makes sense while mapping: launch with slam:=mapping.')
     active = [tid for tid, state in by_id.items() if state == TrajectoryStates.ACTIVE]
     if not active:
         print('no active trajectory (already finished), saving the current state')
@@ -166,14 +163,7 @@ def main():
             fail(f'finish_trajectory failed: {response.status.message}')
     finished_at = time.time()
 
-    # 2. Cartographer state
-    response = node.call(node.write, WriteState.Request(filename=f'{stem}.pbstream',
-                                                        include_unfinished_submaps=False), timeout=120.0)
-    if response.status.code != 0:
-        fail(f'write_state failed: {response.status.message}')
-    print(f'saved {stem}.pbstream')
-
-    # 3. map image (wait for the map re-published after the final optimization)
+    # 2. map image (wait for the map re-published after the final optimization)
     grid = node.wait_for_map(after=finished_at + 1.0)
     width, height = write_map_image(grid, stem)
     res = grid.info.resolution
@@ -181,11 +171,16 @@ def main():
     node.destroy_node()
     rclpy.try_shutdown()
 
-    # 4. copy into install/ so localization can use it without colcon build
+    # A .pbstream from the old Cartographer localization would no longer match this map
+    if os.path.isfile(f'{stem}.pbstream'):
+        os.remove(f'{stem}.pbstream')
+        print(f'removed old {stem}.pbstream (Cartographer localization is no longer used)')
+
+    # 3. copy into install/ so localization can use it without colcon build
     if installed_dir:
         target = os.path.join(installed_dir, sub)
         os.makedirs(target, exist_ok=True)
-        for ext in ('pbstream', 'pgm', 'yaml'):
+        for ext in ('pgm', 'yaml'):
             shutil.copy2(f'{stem}.{ext}', target)
         print(f'copied to {target} (no colcon build needed)')
     else:

@@ -29,6 +29,8 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/imu_filter.py
   scripts/save_map.py
+  scripts/localization_error.py
+  scripts/scan_for_slam.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

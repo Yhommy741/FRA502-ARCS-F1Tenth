@@ -92,7 +92,7 @@ def generate_launch_description():
             description='Track folder in arcsf1tenth_tracks: uses maps/sim/cartographer_map_raceline.csv (frame map), '
                         'else the original maps/sim/raceline.csv (frame world, simulation only)',
         ),
-        DeclareLaunchArgument('line', default_value='raceline',
+        DeclareLaunchArgument('line', default_value='centerline',
                               description='Line to follow with track:=  raceline | centerline'),
         DeclareLaunchArgument('raceline', default_value='', description='Raceline CSV path (overrides track)'),
         DeclareLaunchArgument('raceline_frame', default_value='', description='TF frame of the raceline x/y'),

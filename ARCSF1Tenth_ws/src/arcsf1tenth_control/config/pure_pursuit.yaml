@@ -12,7 +12,7 @@ pure_pursuit:
     lookahead_gain: 0.35        # [s]
 
     # Speed = raceline speed (vx column) * speed_scale, limited to [speed_min, speed_max]
-    speed_scale: 0.6            # start low, raise toward 1.0 when it tracks well
+    speed_scale: 0.7            # start low, raise toward 1.0 when it tracks well
     speed_max: 3.0              # [m/s] (capped at vehicle max_speed)
     speed_min: 0.5              # [m/s]
 
