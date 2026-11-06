@@ -1,5 +1,6 @@
 import glob
 import os
+import re
 import tempfile
 
 import yaml
@@ -38,6 +39,15 @@ def find_track(track):
     with open(matches[0]) as f:
         info = yaml.safe_load(f)
     return os.path.join(track_dir, 'world', 'world.sdf'), info['start_pose'], track_dir
+
+
+def world_name(world_file):
+    """Gazebo world name (<world name="...">): its services are /world/<name>/..."""
+    with open(world_file) as f:
+        match = re.search(r'<world\s+name="([^"]+)"', f.read())
+    if not match:
+        raise RuntimeError(f'No <world name="..."> in {world_file}')
+    return match.group(1)
 
 
 def namespaced_rviz_config(template, namespace):
@@ -180,6 +190,15 @@ def launch_setup(context):
             namespace=namespace,
             output='screen',
             parameters=[{'config_file': bridge_config}],
+        ),
+
+        # Click in RViz ("Publish Point", P) to add/remove static obstacles in Gazebo
+        Node(
+            package='arcsf1tenth_applications',
+            executable='obstacle_spawner.py',
+            namespace=namespace,
+            output='screen',
+            parameters=[{'use_sim_time': True, 'world': world_name(world_file)}],
         ),
 
         # drive (AckermannDriveStamped) -> steering + rear wheel joint commands

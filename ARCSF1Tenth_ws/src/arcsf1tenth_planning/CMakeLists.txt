@@ -29,12 +29,16 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/generate_raceline.py
   scripts/show_raceline.py
+  scripts/frenet_node.py
+  scripts/obstacle_detector.py
+  scripts/yhom_local_planner.py
+  scripts/yhom_state_machine.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 ################ INSTALL LAUNCH, ETC #################
 install(DIRECTORY
-  # add directories here
+  config
   DESTINATION share/${PROJECT_NAME})
 
 ament_package()

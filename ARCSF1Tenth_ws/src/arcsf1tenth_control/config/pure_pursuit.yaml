@@ -1,6 +1,6 @@
 # Pure pursuit raceline follower (pure_pursuit.py). Vehicle limits come from
 # arcsf1tenth_description/config/vehicle.yaml; raceline file and frame from the launch file.
-pure_pursuit:
+/**/pure_pursuit:                 # any namespace (a bare "pure_pursuit:" only matches a node without one)
   ros__parameters:
     rate: 50.0                  # [Hz] control rate
 

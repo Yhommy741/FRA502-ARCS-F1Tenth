@@ -1,0 +1,18 @@
+# Shared Frenet frame + obstacle detection (used by every controller launch).
+
+/**/frenet:                     # frenet_node.py
+  ros__parameters:
+    rate: 50.0                  # [Hz] frenet/state
+    search_window: 5.0          # [m] projection search around the last position on the path
+    max_width: 3.0              # [m] track width search limit (each side)
+    default_half_width: 1.0     # [m] track half width until the map arrives
+
+/**/obstacle_detector:          # obstacle_detector.py
+  ros__parameters:
+    wall_margin: 0.3            # [m] lidar points closer than this to a map wall count as wall
+                                #     (bigger = robust to localization error, misses obstacles near walls)
+    max_range: 10.0             # [m] only points closer than this to the lidar
+    cluster_gap: 0.3            # [m] neighbouring points closer than this = same obstacle
+    min_points: 3               # fewer points = noise (0.4 m box at 10 m = ~3 points)
+    max_size: 2.0               # [m] bigger clusters are ignored (mislocalized wall, not an obstacle)
+    track_margin: 0.1           # [m] obstacles must reach this far into the track

@@ -1,6 +1,6 @@
 # PID wall follower (wall_follow.py). Vehicle limits come from
 # arcsf1tenth_description/config/vehicle.yaml.
-wall_follow:
+/**/wall_follow:                  # any namespace (a bare "wall_follow:" only matches a node without one)
   ros__parameters:
     side: left                  # wall to follow: left | right
     desired_distance: 1.1       # [m] distance to keep from the wall

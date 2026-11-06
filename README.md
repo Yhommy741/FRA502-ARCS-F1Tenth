@@ -15,6 +15,7 @@ generation, wall following and pure pursuit. A real-car bringup template uses th
 | `arcsf1tenth_teleop` | `keyboard.py` |
 | `arcsf1tenth_tracks` | Tracks: `f1tenth_tracks/` (F1TENTH tracks), `lab_tracks/` (our own) |
 | `arcsf1tenth_bringup` | Launch files and RViz configs |
+| `arcsf1tenth_applications` | `obstacle_spawner.py` (click in RViz to add/remove obstacles in Gazebo) |
 | `arcsf1tenth_control` | `wall_follow.py` (PID wall follower), `pure_pursuit.py` (raceline follower), `config/` |
 
 ## Install
@@ -93,6 +94,19 @@ Arguments: `side:=left|right`, `desired_distance:=<m>`, `speed_max:=<m/s>`, `nam
 `use_sim_time:=false` on the real car. Defaults, gains and the rest are in
 `arcsf1tenth_control/config/wall_follow.yaml`. Ctrl-C stops the car.
 Don't run the keyboard teleop at the same time (both publish `drive`).
+
+## Obstacles (simulation)
+Click in RViz to place static obstacles (started by `simulation.launch.py`, node `obstacle_spawner.py`
+in `arcsf1tenth_applications`):
+1. Pick **Publish Point** in the RViz toolbar (shortcut `P`).
+2. Click on the track: an orange 0.4 m box appears in Gazebo there.
+3. Click on an obstacle (within 0.5 m) to remove it. Remove all:
+   ```bash
+   ros2 service call /arcsf1tenth/clear_obstacles std_srvs/srv/Trigger
+   ```
+The tool is single-click: pick it again for the next obstacle. Obstacles are static, solid and seen
+by the lidar, but they are not in the saved map, and the controllers do not avoid them yet.
+Shape and size: node parameters `shape` (`box` | `cylinder`), `size`, `height`, `remove_radius`.
 
 ## Controllers (one launch file per group member)
 Each member has an own controller launch, so controllers and planning can be changed and compared

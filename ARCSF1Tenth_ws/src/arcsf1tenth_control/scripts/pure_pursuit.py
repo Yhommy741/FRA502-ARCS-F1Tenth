@@ -16,6 +16,7 @@ from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker
+from arcsf1tenth_interfaces.msg import Trajectory
 
 
 VEHICLE_PARAMS = ('wheelbase', 'max_steering_angle', 'max_speed')
@@ -41,6 +42,11 @@ class PurePursuit(Node):
 
     Raceline CSV: TUM format 's_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2'
     (generate_raceline.py output, or the original F1TENTH raceline.csv).
+
+    Or, with trajectory_topic set: follow an arcsf1tenth_interfaces/Trajectory published by a
+    planner (e.g. yhom/trajectory from yhom_state_machine), replaced on every message. A point
+    speed of 0 means stop (speed_min is not applied); an empty or stale (> trajectory_timeout)
+    trajectory stops the car.
     """
 
     def __init__(self):
@@ -62,6 +68,8 @@ class PurePursuit(Node):
             )
 
         self.declare_parameter('raceline', '')               # raceline CSV path
+        self.declare_parameter('trajectory_topic', '')       # follow a Trajectory topic instead of the CSV
+        self.declare_parameter('trajectory_timeout', 0.5)    # [s] stop if no new trajectory for this long
         self.declare_parameter('raceline_frame', namespaced_frame(self, 'map'))  # frame of the CSV x/y
         self.declare_parameter('base_frame', namespaced_frame(self, 'base_footprint'))
         self.declare_parameter('rate', 50.0)                 # [Hz]
@@ -87,22 +95,24 @@ class PurePursuit(Node):
         self.speed_min = p('speed_min')
         self.max_error = p('max_tracking_error')
 
-        path = p('raceline')
-        if not path:
-            raise RuntimeError('No raceline: set -p raceline:=<file.csv> or use yhom_controller.launch.py / non_controller.launch.py track:=<map_name>')
-        data = np.loadtxt(path, delimiter=';', comments='#', ndmin=2)
-        if data.shape[1] < 6:
-            raise RuntimeError(f'{path}: expected columns s; x; y; psi; kappa; vx; ...')
-        self.xy = data[:, 1:3]
-        self.ref_speed = data[:, 5]
-        # Arc length from the points themselves (closed loop)
-        seg = np.linalg.norm(np.diff(np.vstack([self.xy, self.xy[:1]]), axis=0), axis=1)
-        self.s = np.concatenate([[0.0], np.cumsum(seg)[:-1]])
-        self.length = seg.sum()
-        spacing = self.length / len(self.xy)
-        self.window = max(int(p('search_window') / spacing), 5)
-
+        self.topic = p('trajectory_topic')
+        self.trajectory_timeout = p('trajectory_timeout')
+        self.xy = None              # path points (N, 2); None = nothing to follow yet
+        self.closed = True
+        self.trajectory_time = None
         self.nearest = None         # index of the nearest point last cycle
+        self.search_window = p('search_window')
+        path = p('raceline')
+        if self.topic:
+            path = self.topic
+        elif not path:
+            raise RuntimeError('No raceline: set -p raceline:=<file.csv> or use yhom_controller.launch.py / non_controller.launch.py track:=<map_name>')
+        else:
+            data = np.loadtxt(path, delimiter=';', comments='#', ndmin=2)
+            if data.shape[1] < 6:
+                raise RuntimeError(f'{path}: expected columns s; x; y; psi; kappa; vx; ...')
+            self.set_path(data[:, 1:3], data[:, 5], closed=True)
+
         self.speed_cmd = 0.0
         self.state = 'start'
 
@@ -112,17 +122,51 @@ class PurePursuit(Node):
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.path_pub = self.create_publisher(Path, '~/raceline', latched)
         self.goal_pub = self.create_publisher(Marker, '~/lookahead', 10)
-        self.publish_path()
+        if self.topic:
+            self.create_subscription(Trajectory, self.topic, self.on_trajectory, 10)
+            self.get_logger().info(f'Following trajectories on {self.topic}, speed x{self.speed_scale:.2f} '
+                                   f'(max {self.speed_max:.1f} m/s)')
+        else:
+            self.publish_path()
+            self.get_logger().info(
+                f'Following {path} ({len(self.xy)} points, {self.length:.1f} m) in frame {self.raceline_frame}, '
+                f'speed x{self.speed_scale:.2f} (max {self.speed_max:.1f} m/s)'
+            )
 
         self.create_timer(1.0 / p('rate'), self.step)
-        self.get_logger().info(
-            f'Following {path} ({len(self.xy)} points, {self.length:.1f} m) in frame {self.raceline_frame}, '
-            f'speed x{self.speed_scale:.2f} (max {self.speed_max:.1f} m/s)'
-        )
+
+    def set_path(self, xy, speed, closed):
+        self.xy = np.asarray(xy, dtype=float)
+        self.ref_speed = np.asarray(speed, dtype=float)
+        self.closed = closed
+        pts = np.vstack([self.xy, self.xy[:1]]) if closed else self.xy
+        seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        self.s = np.concatenate([[0.0], np.cumsum(seg)[:len(self.xy) - 1]])
+        self.length = seg.sum()
+        spacing = self.length / max(len(self.xy), 1)
+        self.window = max(int(self.search_window / max(spacing, 1e-6)), 5)
+
+    def on_trajectory(self, msg):
+        self.trajectory_time = self.get_clock().now()
+        if len(msg.points) < 2:
+            self.xy = None          # planner found no path: stop
+            return
+        if msg.header.frame_id:
+            self.raceline_frame = msg.header.frame_id
+        self.set_path([(pt.x, pt.y) for pt in msg.points], [pt.v for pt in msg.points], msg.closed)
+        self.nearest = None         # new points: search the whole (short) trajectory
+        self.publish_path()
 
     # ------------------------------------------------------------------ control
 
     def step(self):
+        if self.topic:
+            stale = self.trajectory_time is None or \
+                self.get_clock().now() - self.trajectory_time > Duration(seconds=self.trajectory_timeout)
+            if stale or self.xy is None:
+                self.set_state('no_trajectory', f'No (valid) trajectory on {self.topic}: stopping')
+                self.publish(0.0, 0.0)
+                return
         pose = self.car_pose()
         if pose is None:
             self.set_state('no_pose', f'Waiting for TF {self.raceline_frame} -> {self.base_frame}')
@@ -153,7 +197,10 @@ class PurePursuit(Node):
         curvature = 2.0 * local_y / d2 if d2 > 1e-6 else 0.0
         steering = clamp(math.atan(self.wheelbase * curvature), -self.max_steer, self.max_steer)
 
-        speed = clamp(self.ref_speed[nearest] * self.speed_scale, self.speed_min, self.speed_max)
+        if self.ref_speed[nearest] <= 0.05:
+            speed = 0.0             # the path says stop here
+        else:
+            speed = clamp(self.ref_speed[nearest] * self.speed_scale, self.speed_min, self.speed_max)
         self.speed_cmd = speed
         self.publish(speed, steering)
         self.publish_goal(gx, gy)
@@ -175,13 +222,22 @@ class PurePursuit(Node):
         """Nearest raceline index; only near the previous one so crossings/close sections don't jump."""
         if self.nearest is None:
             candidates = np.arange(len(self.xy))
-        else:
+        elif self.closed:
             candidates = np.arange(self.nearest - self.window, self.nearest + self.window + 1) % len(self.xy)
+        else:
+            candidates = np.arange(max(self.nearest - self.window, 0), min(self.nearest + self.window + 1, len(self.xy)))
         d2 = np.sum((self.xy[candidates] - (x, y)) ** 2, axis=1)
         return int(candidates[np.argmin(d2)])
 
     def point_ahead(self, index, distance):
         """Point 'distance' metres further along the raceline from point index (interpolated)."""
+        if not self.closed:
+            # open trajectory: stop at its end point
+            target = min(self.s[index] + distance, self.s[-1])
+            i = min(int(np.searchsorted(self.s, target, side='right')) - 1, len(self.xy) - 2)
+            seg = self.s[i + 1] - self.s[i]
+            t = (target - self.s[i]) / seg if seg > 1e-9 else 0.0
+            return self.xy[i] + t * (self.xy[i + 1] - self.xy[i])
         target = (self.s[index] + distance) % self.length
         i = int(np.searchsorted(self.s, target, side='right')) - 1
         j = (i + 1) % len(self.xy)
