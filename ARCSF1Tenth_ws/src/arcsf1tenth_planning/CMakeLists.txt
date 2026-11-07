@@ -33,6 +33,8 @@ install(PROGRAMS
   scripts/obstacle_detector.py
   scripts/yhom_local_planner.py
   scripts/yhom_state_machine.py
+  scripts/non_rrt_planner.py
+  scripts/non_rrt_tracker.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
