@@ -1,31 +1,4 @@
 #!/usr/bin/python3
-"""Generate two followable lines from an occupancy map: the centerline and a
-minimum-curvature raceline, both checked against the car's real outline.
-
-Pipeline:
-  1. track area   free cells connected to the start pose (small specks filled)
-  2. centerline   skeleton of the track area, main loop through the start pose in the
-                  driving direction (dead ends ignored), smoothed and resampled
-  3. widths       distance to the walls left and right of each centerline point
-  4. raceline     minimum curvature: each point moves sideways within the track so the
-                  path bends as little as possible
-  5. collision    the car outline (vehicle.yaml footprint_*, measured from the rear axle =
-                  the path point) is placed along the line; every outline point must stay
-                  `--safety` from the walls. Where it does not, the raceline is pushed
-                  further from the wall there and re-optimized
-  6. speed        v = min(max_speed, sqrt(a_lat / |curvature|)) with acceleration
-                  and braking limits (for both lines)
-
-Outputs (next to the map unless --out-dir), in the map frame, same format for both
-(yhom_controller.launch.py / non_controller.launch.py line:=centerline | raceline):
-  <map>_centerline.csv   s_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2
-  <map>_raceline.csv     s_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2
-  <map>_raceline.png     check picture (--show also opens it in a window;
-                         show_raceline.py shows existing files without regenerating)
-
-Usage:
-  generate_raceline.py <map.yaml | track name> [--start X Y YAW] [--safety 0.1] [--a-lat 4.0] ...
-"""
 
 import argparse
 import math
@@ -39,12 +12,11 @@ from scipy.sparse import csgraph
 from scipy.sparse.linalg import splu
 from scipy.spatial import cKDTree
 
-from arcsf1tenth_planning.tracks import resolve_map
+from arcsf1tenth_planning.utils.tracks import resolve_map
 
-
-# ------------------------------------------------------------------------- map
 
 class GridMap:
+    # Load a map_server map as a grid with its resolution and origin.
     def __init__(self, map_yaml):
         with open(map_yaml) as f:
             meta = yaml.safe_load(f)
@@ -61,30 +33,26 @@ class GridMap:
         self.height, self.width = image.shape
         self.image = image
 
+    # Convert world (x, y) to pixel (col, row).
     def to_pixel(self, x, y):
         col = (np.asarray(x) - self.origin[0]) / self.resolution - 0.5
         row = self.height - 0.5 - (np.asarray(y) - self.origin[1]) / self.resolution
         return col, row
 
+    # Convert pixel (col, row) to world (x, y).
     def to_world(self, col, row):
         x = self.origin[0] + (np.asarray(col) + 0.5) * self.resolution
         y = self.origin[1] + (self.height - np.asarray(row) - 0.5) * self.resolution
         return x, y
 
+    # Return the map extent [x_min, x_max, y_min, y_max] for plotting.
     def extent(self):
         x0, y0 = self.origin
         return [x0, x0 + self.width * self.resolution, y0, y0 + self.height * self.resolution]
 
 
+# Return the drivable cells: connected to the start, with small isolated specks filled.
 def track_area(grid, start, min_hole_area):
-    """Cells the car can drive on: connected to the start, small isolated specks filled.
-
-    Real walls are never removed: every non-free region (occupied or unknown) that
-    touches the map border or is bigger than min_hole_area stays blocked, including
-    thin wall tips (a morphological closing used to erase those, e.g. the tip of the
-    Austin hairpin wall, so the raceline went through it). Only small isolated blobs
-    inside the track (lidar noise specks, unknown streaks) count as track.
-    """
     blocked, n = ndimage.label(~grid.free, structure=np.ones((3, 3)))  # 8-connected: diagonal walls stay one piece
     sizes = ndimage.sum(np.ones_like(blocked), blocked, index=np.arange(1, n + 1))
     border = set(np.unique(np.concatenate([blocked[0], blocked[-1], blocked[:, 0], blocked[:, -1]])))
@@ -101,17 +69,8 @@ def track_area(grid, start, min_hole_area):
     return labels == labels[row, col]
 
 
-# ------------------------------------------------------------------ centerline
-
+# Return the main track loop as ordered world points, from the skeleton cut at the start pose.
 def main_loop_pixels(area, grid, start, cut_half_width=1.5):
-    """Main loop of the track as ordered world points, starting at the start pose.
-
-    The skeleton (medial axis) of the track area is cut by a short line across the
-    track at the start pose; the shortest path along the skeleton from just ahead of
-    the cut to just behind it then has to go all the way around the loop in the
-    driving direction. Dead-end corridors and small skeleton loops (map noise) are
-    never on that shortest path, so they are ignored automatically.
-    """
     skeleton = cv2.ximgproc.thinning(area.astype(np.uint8) * 255, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN) > 0
     rows, cols = np.nonzero(skeleton)
     if len(rows) < 20:
@@ -157,10 +116,8 @@ def main_loop_pixels(area, grid, start, cut_half_width=1.5):
     return np.column_stack(grid.to_world(cols[path], rows[path]))
 
 
+# Fit a periodic spline and resample it every `spacing` metres: (points, tangents, curvature).
 def resample_closed(points, spacing, smoothing=0.0):
-    """Periodic spline through points, resampled every `spacing` metres.
-
-    Returns (points, tangent unit vectors, curvature)."""
     pts = points[np.r_[np.linalg.norm(np.diff(points, axis=0), axis=1) > 1e-6, True]]
     tck, _ = interpolate.splprep([pts[:, 0], pts[:, 1]], s=smoothing * len(pts), per=1, k=3)
     dense = np.column_stack(interpolate.splev(np.linspace(0, 1, 20 * len(pts), endpoint=False), tck))
@@ -179,8 +136,8 @@ def resample_closed(points, spacing, smoothing=0.0):
     return np.column_stack([x, y]), tangent, curvature
 
 
+# Return the distance from each point to the right and left track edges.
 def track_widths(points, tangent, area, grid, max_width=10.0):
-    """Distance from each point to the track edge on the right and on the left."""
     normal = np.column_stack([-tangent[:, 1], tangent[:, 0]])  # left
     step = grid.resolution / 2.0
     distances = np.arange(step, max_width, step)
@@ -198,18 +155,8 @@ def track_widths(points, tangent, area, grid, max_width=10.0):
     return widths[0], widths[1], normal
 
 
-# -------------------------------------------------------------------- raceline
-
+# Return the lateral offsets that minimise curvature, solved as a box-constrained QP.
 def minimum_curvature(points, normal, w_right, w_left, margin, max_iter=20000):
-    """Lateral offsets a (left positive) minimising sum |second difference of position|^2.
-
-    Box-constrained QP  min 1/2 a'Ha - g'a,  lower <= a <= upper,  H = A'A (sparse, banded),
-    solved with a primal active-set method: start at a = 0 (the centerline, feasible),
-    step toward the optimum of the free offsets and stop at the first bound hit; when the
-    full step fits, release bounds whose gradient pulls back inside. Each iteration is one
-    sparse direct solve, so it is exact and fast even for long tracks (iterative least
-    squares solvers converge very slowly here: the second difference is ill-conditioned).
-    """
     n = len(points)
     D = sparse.diags([np.ones(n), -2 * np.ones(n), np.ones(n)], [-1, 0, 1], shape=(n, n), format='lil')
     D[0, n - 1] = 1.0
@@ -256,15 +203,13 @@ def minimum_curvature(points, normal, w_right, w_left, margin, max_iter=20000):
     raise RuntimeError(f'minimum curvature did not converge in {max_iter} iterations')
 
 
-# ------------------------------------------------------------------- collision
-
+# Return the distance [m] from every track cell to the nearest wall.
 def clearance_map(area, grid):
-    """Distance [m] from every track cell to the nearest wall / non-track cell."""
     return ndimage.distance_transform_edt(area) * grid.resolution
 
 
+# Return points along the car outline in the car frame (rear axle origin, x forward).
 def outline_points(front, rear, width, step=0.05):
-    """Points along the car outline in the car frame (rear axle origin, x forward)."""
     xs = np.linspace(-rear, front, max(2, int(math.ceil((front + rear) / step)) + 1))
     ys = np.linspace(-width / 2.0, width / 2.0, max(2, int(math.ceil(width / step)) + 1))
     return np.vstack([np.column_stack([xs, np.full_like(xs, -width / 2.0)]),
@@ -273,8 +218,8 @@ def outline_points(front, rear, width, step=0.05):
                       np.column_stack([np.full_like(ys, front), ys])])
 
 
+# Return the smallest wall distance [m] of the car outline at every pose of the path.
 def body_clearance(path, heading, outline, clearance, grid):
-    """Smallest wall distance [m] of the car outline at every pose of the path."""
     c, s = np.cos(heading)[:, None], np.sin(heading)[:, None]
     x = path[:, 0:1] + c * outline[None, :, 0] - s * outline[None, :, 1]
     y = path[:, 1:2] + s * outline[None, :, 0] + c * outline[None, :, 1]
@@ -286,14 +231,9 @@ def body_clearance(path, heading, outline, clearance, grid):
     return values.min(axis=1)
 
 
+# Return a minimum-curvature raceline whose car outline keeps `safety` from the walls.
 def optimize_raceline(center, area, grid, clearance, outline, half_width, safety,
                       spacing, iterations, max_rounds=12):
-    """Minimum-curvature raceline whose car outline keeps `safety` from the walls.
-
-    The lateral margin of the path point starts at half the car width + safety and is
-    raised locally (per centerline point) wherever the outline still gets too close,
-    e.g. the nose cutting a corner, until the whole lap is clear.
-    """
     tree = cKDTree(center)
     margin = np.full(len(center), half_width + safety)
     window = max(1, int(round(0.6 / spacing)))   # widen the margin over +-0.6 m around a hit
@@ -317,8 +257,8 @@ def optimize_raceline(center, area, grid, clearance, outline, half_width, safety
     return race, race_tangent, kappa, body, max_rounds
 
 
+# Return the speed profile: corner limit, then acceleration and braking passes on a closed loop.
 def speed_profile(curvature, ds, max_speed, a_lat, a_accel, a_brake):
-    """Corner limit, then forward (acceleration) and backward (braking) passes on a closed loop."""
     n = len(curvature)
     v_limit = np.minimum(max_speed, np.sqrt(a_lat / np.maximum(np.abs(curvature), 1e-6)))
     v = np.tile(v_limit, 3)  # three laps so the passes wrap around the loop
@@ -331,16 +271,15 @@ def speed_profile(curvature, ds, max_speed, a_lat, a_accel, a_brake):
     return v, ax
 
 
-# ---------------------------------------------------------------------- output
-
+# Return rows s, x, y, psi, kappa, vx, ax (F1TENTH / TUM raceline format).
 def line_table(points, tangent, kappa, v, ax):
-    """Rows s, x, y, psi, kappa, vx, ax (F1TENTH / TUM raceline format)."""
     ds = np.linalg.norm(np.diff(np.vstack([points, points[:1]]), axis=0), axis=1)
     s = np.concatenate([[0.0], np.cumsum(ds)[:-1]])
     psi = np.arctan2(tangent[:, 1], tangent[:, 0])
     return np.column_stack([s, points, psi, kappa, v, ax])
 
 
+# Write the centerline and raceline CSVs and the preview image.
 def save_outputs(prefix, centerline, raceline, grid, start, show):
     header = 's_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2'
     for name, table in (('centerline', centerline), ('raceline', raceline)):
@@ -350,7 +289,7 @@ def save_outputs(prefix, centerline, raceline, grid, start, show):
     if not show:
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    from arcsf1tenth_planning.plotting import plot_track
+    from arcsf1tenth_planning.utils.plotting import plot_track
     fig = plot_track(grid.image, grid.extent(), centerline[:, 1:3], raceline, start, title=os.path.basename(prefix))
     fig.savefig(f'{prefix}_raceline.png', dpi=120, bbox_inches='tight')
     print(f'wrote {prefix}_centerline.csv, {prefix}_raceline.csv, {prefix}_raceline.png')
@@ -358,8 +297,7 @@ def save_outputs(prefix, centerline, raceline, grid, start, show):
         plt.show()
 
 
-# ------------------------------------------------------------------------ main
-
+# Load the vehicle parameters from vehicle.yaml.
 def load_vehicle(path):
     if path is None:
         from ament_index_python.packages import get_package_share_directory
@@ -368,6 +306,7 @@ def load_vehicle(path):
         return yaml.safe_load(f)['/**']['ros__parameters']
 
 
+# Generate the centerline and the minimum-curvature raceline of a track.
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('map_yaml', help='map yaml (e.g. cartographer_map.yaml) or a track name (e.g. brands_hatch: '
@@ -404,8 +343,8 @@ def main():
     outline = outline_points(vehicle['footprint_front'], vehicle['footprint_rear'], vehicle['footprint_width'])
     half_width = vehicle['footprint_width'] / 2.0
 
+    # Compute the speed profile and return the rows of the line file.
     def finish(points, tangent, kappa):
-        """Speed profile -> rows of the line file."""
         kappa = ndimage.uniform_filter1d(kappa, size=5, mode='wrap')
         ds = np.mean(np.linalg.norm(np.diff(np.vstack([points, points[:1]]), axis=0), axis=1))
         v, ax = speed_profile(kappa, ds, vehicle['max_speed'], args.a_lat,

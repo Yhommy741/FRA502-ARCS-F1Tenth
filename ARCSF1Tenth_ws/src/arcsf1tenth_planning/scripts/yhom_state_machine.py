@@ -1,28 +1,4 @@
 #!/usr/bin/python3
-"""yhom's state machine: follow the global path, switch to the local planner for obstacles.
-
-    frenet/state, obstacles, global_trajectory, yhom/local_trajectory
-        ──► yhom_state_machine ──► yhom/trajectory (what pure_pursuit follows)
-                               ──► yhom/state (std_msgs/String) + yhom/state_marker (RViz text)
-
-States:
-  GLOBAL   follow the global path (centerline).
-           -> AVOID   an obstacle blocks the corridor ahead and the local planner has a path
-           -> BLOCKED it blocks the corridor and there is no path around it
-  AVOID    follow yhom/local_trajectory (Frenet optimal path around the obstacle).
-           -> GLOBAL  corridor ahead clear AND car back on the global path (|d| small)
-                      AND at least min_avoid_time in AVOID (no flicker)
-           ("clear" = no blocking obstacle for clear_time: single-frame detection dropouts)
-           -> BLOCKED local planner lost its path
-  BLOCKED  brake along the global path to a stop stop_distance before the obstacle
-           (deceleration brake_decel), until a path exists (for clear_time) or the
-           obstacle is gone.
-
-"Blocks the corridor": an obstacle's Frenet extent is ahead of the car, closer than
-trigger_distance + speed * trigger_time, and overlaps |d| <= half car width + corridor_margin
-around the global path. Once in AVOID/BLOCKED the reach is release_distance longer, so a
-car that slowed down (shorter reach) does not count the same obstacle as gone.
-"""
 
 import math
 
@@ -39,15 +15,18 @@ from rclpy.time import Time
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 
-from arcsf1tenth_planning.conversions import global_window, msg_to_global_path
+from arcsf1tenth_planning.utils.conversions import global_window, msg_to_global_path
 
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 COLORS = {'GLOBAL': (0.2, 1.0, 0.2), 'AVOID': (1.0, 0.7, 0.0), 'BLOCKED': (1.0, 0.1, 0.1)}
 
 
 class YhomStateMachine(Node):
+    # Set up the node: vehicle and state machine parameters, state, subscribers, publishers and timer.
     def __init__(self):
         super().__init__('yhom_state_machine')
+
+        # Parameters
         for name in ('footprint_width', 'footprint_rear', 'footprint_front'):   # vehicle.yaml
             self.declare_parameter(name, Parameter.Type.DOUBLE)
         try:
@@ -73,6 +52,7 @@ class YhomStateMachine(Node):
         p = lambda name: self.get_parameter(name).value
         self.p = p
 
+        # Variables
         self.path = None
         self.frame = None
         self.state_msg = None
@@ -83,27 +63,45 @@ class YhomStateMachine(Node):
         self.last_blocked = self.state_since    # last time the corridor was blocked
         self.last_no_path = self.state_since    # last time the local planner had no path
         self.stop_s = None                      # BLOCKED: global s where the car must stand
+
+        # Publishers
+        self.traj_pub = self.create_publisher(Trajectory, 'yhom/trajectory', 10)
+        self.state_pub = self.create_publisher(String, 'yhom/state', LATCHED)
+        self.marker_pub = self.create_publisher(Marker, 'yhom/state_marker', 10)
+
+        # Subscribers
         self.create_subscription(Trajectory, 'global_trajectory', self.on_path, LATCHED)
         self.create_subscription(FrenetState, 'frenet/state', lambda m: setattr(self, 'state_msg', m), 10)
         self.create_subscription(ObstacleArray, 'obstacles', lambda m: setattr(self, 'obstacles', m), 10)
         self.create_subscription(Trajectory, 'yhom/local_trajectory', lambda m: setattr(self, 'local', m), 10)
-        self.traj_pub = self.create_publisher(Trajectory, 'yhom/trajectory', 10)
-        self.state_pub = self.create_publisher(String, 'yhom/state', LATCHED)
-        self.marker_pub = self.create_publisher(Marker, 'yhom/state_marker', 10)
-        self.state_pub.publish(String(data=self.state))
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(1.0 / p('rate'), self.step)
 
+        # On Start
+        self.state_pub.publish(String(data=self.state))
+
+    # Store the global path and its frame.
     def on_path(self, msg):
         if msg.points:
             self.path = msg_to_global_path(msg)
             self.frame = msg.header.frame_id
 
+    # Return True if a message exists and is younger than the timeout.
     def fresh(self, msg, now):
         return msg is not None and (now - Time.from_msg(msg.header.stamp)).nanoseconds * 1e-9 < self.p('timeout')
 
+    # Return the distance along the path to the nearest obstacle blocking the global path ahead, or None.
     def corridor_blocked(self, st, now, extra):
-        """Distance along the path to the nearest obstacle blocking the global path ahead
-        (within the trigger reach + extra), or None."""
+        # (only obstacles within the trigger reach + extra count)
         if not self.fresh(self.obstacles, now):
             return None
         reach = self.p('trigger_distance') + max(st.speed, 0.0) * self.p('trigger_time') + extra
@@ -116,6 +114,7 @@ class YhomStateMachine(Node):
                 nearest = a if nearest is None else min(nearest, a)
         return nearest
 
+    # Update the GLOBAL / AVOID / BLOCKED state and publish the trajectory for that state.
     def step(self):
         now = self.get_clock().now()
         st = self.state_msg
@@ -173,6 +172,7 @@ class YhomStateMachine(Node):
         self.traj_pub.publish(msg)
         self.publish_marker(stamp)
 
+    # Publish the current state as a coloured RViz text marker above the car.
     def publish_marker(self, stamp):
         m = Marker()
         m.header.frame_id = self.frame
@@ -188,6 +188,7 @@ class YhomStateMachine(Node):
         self.marker_pub.publish(m)
 
 
+# Start the node and spin until Ctrl+C.
 def main():
     rclpy.init()
     try:

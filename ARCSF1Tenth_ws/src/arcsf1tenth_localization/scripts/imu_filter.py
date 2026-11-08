@@ -1,29 +1,4 @@
 #!/usr/bin/python3
-"""IMU preprocessing for the EKF: imu -> imu/filtered.
-
-    imu (raw BNO055 / gazebo_imu) ──► imu_filter ──► imu/filtered ──► robot_localization EKF
-    odometry/wheel (wheel speed) ──┘                ──► ~/gyro_bias (std_msgs/Float64, z axis)
-
-robot_localization has no gyro-bias state, so the bias is removed here
-(design after the carver_f1tenth imu_filter):
-
-1. Startup calibration: while the car stands still for `calibration_seconds`
-   (wheel speed ~0 and gyro quiet), measure the gyro bias and the gyro/accel
-   noise variance per axis. Restarts if the car moves. Nothing is published
-   before calibration, unless it times out (then bias = 0 until the first ZUPT).
-2. Bias subtraction on every message.
-3. ZUPT (zero-velocity update): whenever the car is verified still again for
-   `zupt_settle_time` (wheel speed below `still_speed` AND bias-corrected gyro
-   below `still_gyro`), refresh the bias slowly (exponential average,
-   `zupt_alpha`), so it follows warm-up / temperature drift.
-4. Optional horizontal projection (`project_to_horizontal`): remove the
-   chassis roll/pitch (suspension) using the IMU orientation, so
-   angular_velocity.z is the yaw rate about gravity.
-5. Optional spike/noise filter on the gyro: median of `gyro_median_window`
-   samples, then moving average of `gyro_ma_window` samples (1 = off).
-6. Covariance: the measured variances go into the message covariance fields,
-   so the EKF weights the gyro by how noisy it really is.
-"""
 
 import math
 from collections import deque
@@ -38,9 +13,11 @@ from std_msgs.msg import Float64
 
 
 class ImuFilter(Node):
+    # Set up the node: filter parameters, calibration/filter state, publishers and the IMU/wheel subscribers.
     def __init__(self):
         super().__init__('imu_filter')
 
+        # Parameters
         # 1. startup calibration
         self.declare_parameter('calibration_seconds', 3.0)    # [s] still time to measure bias + noise
         self.declare_parameter('calibration_timeout', 15.0)   # [s] give up and publish with bias 0
@@ -72,10 +49,10 @@ class ImuFilter(Node):
 
         median_window = max(1, int(p('gyro_median_window')))
         ma_window = max(1, int(p('gyro_ma_window')))
+
+        # Variables
         self.median_buffers = [deque(maxlen=median_window) for _ in range(3)]
         self.ma_buffers = [deque(maxlen=ma_window) for _ in range(3)]
-
-        # state
         self.bias = [0.0, 0.0, 0.0]
         self.gyro_var = None              # measured at calibration
         self.accel_var = None
@@ -86,20 +63,35 @@ class ImuFilter(Node):
         self.wheel_speed = None           # None until the first wheel odometry arrives
         self.still_since = None
 
+        # Publishers
         self.imu_pub = self.create_publisher(Imu, 'imu/filtered', 50)
         self.bias_pub = self.create_publisher(Float64, '~/gyro_bias', 10)
+
+        # Subscribers
         self.create_subscription(Imu, 'imu', self.imu_callback, 50)
         self.create_subscription(Odometry, 'odometry/wheel', self.wheel_callback, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
         self.get_logger().info(
             f'Calibrating gyro: keep the car still for {p("calibration_seconds"):.1f} s '
             f'(projection {"on" if self.project else "off"}, '
             f'median {median_window}, moving average {ma_window})')
 
-    # ---------------------------------------------------------------- inputs
-
+    # Store the latest wheel speed (used to detect standstill).
     def wheel_callback(self, msg):
         self.wheel_speed = msg.twist.twist.linear.x
 
+    # Calibrate or update the gyro bias, then publish the bias-corrected IMU message.
     def imu_callback(self, msg):
         now = self.get_clock().now()
         if self.start_time is None:
@@ -119,15 +111,13 @@ class ImuFilter(Node):
 
         self.publish(msg, corrected)
 
-    # ----------------------------------------------------------- calibration
-
+    # Return True when the car is verified still: wheels stopped and (bias-corrected) gyro quiet.
     def is_still(self, corrected_gyro):
-        """Car verified still: wheels stopped and (bias-corrected) gyro quiet."""
         wheels_stopped = self.wheel_speed is not None and abs(self.wheel_speed) < self.still_speed
         return wheels_stopped and math.sqrt(sum(g * g for g in corrected_gyro)) < self.still_gyro
 
+    # 1. Startup calibration: measure bias + variance over one uninterrupted still window.
     def calibrate(self, now, gyro, accel, still):
-        """1. Startup calibration: bias + variance over one uninterrupted still window."""
         if not still:
             self.calib_samples, self.calib_window_start = [], None   # moved: start over
         else:
@@ -153,8 +143,8 @@ class ImuFilter(Node):
                 'Gyro calibration timed out (car never still, or no odometry/wheel): '
                 'publishing with bias 0 until the car stops (ZUPT)')
 
+    # 3. Zero-velocity update: slowly refresh the bias while the car stays still.
     def zupt(self, now, gyro, still):
-        """3. Zero-velocity update: refresh the bias while the car stays still."""
         if not still:
             self.still_since = None
             return
@@ -165,8 +155,7 @@ class ImuFilter(Node):
         a = self.zupt_alpha
         self.bias = [(1.0 - a) * b + a * g for b, g in zip(self.bias, gyro)]
 
-    # ---------------------------------------------------------------- output
-
+    # Project and smooth the gyro, fill in the covariances, and publish the IMU message and the bias.
     def publish(self, msg, gyro):
         if self.project:
             gyro = self.horizontal(msg.orientation, gyro)
@@ -182,9 +171,9 @@ class ImuFilter(Node):
         self.imu_pub.publish(msg)
         self.bias_pub.publish(Float64(data=self.bias[2]))
 
+    # 4. Rotate the gyro vector by the IMU's roll and pitch (not yaw), so z is the yaw rate about gravity.
     @staticmethod
     def horizontal(q, gyro):
-        """4. Rotate the gyro vector by the IMU's roll and pitch (not yaw): z = yaw rate about gravity."""
         if q.x == 0.0 and q.y == 0.0 and q.z == 0.0 and q.w == 0.0:
             return gyro   # no orientation from this IMU
         roll = math.atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y))
@@ -195,8 +184,8 @@ class ImuFilter(Node):
         y1, z1 = cr * y - sr * z, sr * y + cr * z
         return [cp * x + sp * z1, y1, -sp * x + cp * z1]
 
+    # 5. Filter each gyro axis with a median (spike rejection) then a moving average (noise).
     def smooth(self, gyro):
-        """5. Median (spike rejection) then moving average (noise) per axis."""
         out = []
         for i, value in enumerate(gyro):
             self.median_buffers[i].append(value)
@@ -205,6 +194,7 @@ class ImuFilter(Node):
         return out
 
 
+# Start the node and spin until Ctrl+C.
 def main(args=None):
     rclpy.init(args=args)
     node = ImuFilter()

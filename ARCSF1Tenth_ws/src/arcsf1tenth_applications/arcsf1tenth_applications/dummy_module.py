@@ -2,5 +2,6 @@
 
 dummy_var = 0
 
+# Placeholder function.
 def dummy_function():
     pass

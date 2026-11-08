@@ -22,36 +22,18 @@ from arcsf1tenth_interfaces.msg import Trajectory
 VEHICLE_PARAMS = ('wheelbase', 'max_steering_angle', 'max_speed')
 
 
+# Return the TF frame in the node's namespace (/arcsf1tenth + map -> arcsf1tenth/map, no namespace -> map).
 def namespaced_frame(node, name):
-    """TF frame in the node's namespace: /arcsf1tenth + map -> arcsf1tenth/map (no namespace -> map)."""
     namespace = node.get_namespace().strip('/')
     return f'{namespace}/{name}' if namespace else name
 
 
 class PurePursuit(Node):
-    """Pure pursuit raceline follower: TF pose + raceline CSV -> drive.
-
-    Each cycle:
-      1. car pose (rear axle = base_footprint) in the raceline frame from TF
-      2. nearest raceline point (searched near the previous one)
-      3. lookahead distance  Ld = clamp(lookahead_min + lookahead_gain * v, lookahead_min, lookahead_max)
-      4. goal point: Ld further along the raceline (by arc length)
-      5. steering  delta = atan(2 * wheelbase * y_goal / d^2)
-         (y_goal = goal sideways in the car frame, d = distance to the goal)
-      6. speed = raceline vx at the nearest point * speed_scale
-
-    Raceline CSV: TUM format 's_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2'
-    (generate_raceline.py output, or the original F1TENTH raceline.csv).
-
-    Or, with trajectory_topic set: follow an arcsf1tenth_interfaces/Trajectory published by a
-    planner (e.g. yhom/trajectory from yhom_state_machine), replaced on every message. A point
-    speed of 0 means stop (speed_min is not applied); an empty or stale (> trajectory_timeout)
-    trajectory stops the car.
-    """
-
+    # Set up the node: parameters, the raceline or trajectory to follow, publishers, subscriber and control timer.
     def __init__(self):
         super().__init__('pure_pursuit')
 
+        # Parameters
         # Vehicle limits: no defaults, must come from arcsf1tenth_description/config/vehicle.yaml
         for name in VEHICLE_PARAMS:
             self.declare_parameter(name, Parameter.Type.DOUBLE)
@@ -94,14 +76,15 @@ class PurePursuit(Node):
         self.speed_max = min(p('speed_max'), p('max_speed'))
         self.speed_min = p('speed_min')
         self.max_error = p('max_tracking_error')
-
         self.topic = p('trajectory_topic')
         self.trajectory_timeout = p('trajectory_timeout')
+        self.search_window = p('search_window')
+
+        # Variables
         self.xy = None              # path points (N, 2); None = nothing to follow yet
         self.closed = True
         self.trajectory_time = None
         self.nearest = None         # index of the nearest point last cycle
-        self.search_window = p('search_window')
         path = p('raceline')
         if self.topic:
             path = self.topic
@@ -115,15 +98,32 @@ class PurePursuit(Node):
 
         self.speed_cmd = 0.0
         self.state = 'start'
-
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        # Publishers
         self.drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.path_pub = self.create_publisher(Path, '~/raceline', latched)
         self.goal_pub = self.create_publisher(Marker, '~/lookahead', 10)
+
+        # Subscribers
         if self.topic:
             self.create_subscription(Trajectory, self.topic, self.on_trajectory, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+        self.create_timer(1.0 / p('rate'), self.step)
+
+        # On Start
+        if self.topic:
             self.get_logger().info(f'Following trajectories on {self.topic}, speed x{self.speed_scale:.2f} '
                                    f'(max {self.speed_max:.1f} m/s)')
         else:
@@ -133,8 +133,7 @@ class PurePursuit(Node):
                 f'speed x{self.speed_scale:.2f} (max {self.speed_max:.1f} m/s)'
             )
 
-        self.create_timer(1.0 / p('rate'), self.step)
-
+    # Store a new path to follow and precompute its arc length and nearest-point search window.
     def set_path(self, xy, speed, closed):
         self.xy = np.asarray(xy, dtype=float)
         self.ref_speed = np.asarray(speed, dtype=float)
@@ -146,6 +145,7 @@ class PurePursuit(Node):
         spacing = self.length / max(len(self.xy), 1)
         self.window = max(int(self.search_window / max(spacing, 1e-6)), 5)
 
+    # Replace the followed path with a new planner trajectory (an empty one means stop).
     def on_trajectory(self, msg):
         self.trajectory_time = self.get_clock().now()
         if len(msg.points) < 2:
@@ -157,8 +157,7 @@ class PurePursuit(Node):
         self.nearest = None         # new points: search the whole (short) trajectory
         self.publish_path()
 
-    # ------------------------------------------------------------------ control
-
+    # One control cycle: find the lookahead goal on the path, compute steering and speed, and publish.
     def step(self):
         if self.topic:
             stale = self.trajectory_time is None or \
@@ -205,6 +204,7 @@ class PurePursuit(Node):
         self.publish(speed, steering)
         self.publish_goal(gx, gy)
 
+    # Return the car pose (x, y, yaw) in the path frame from TF, or None if missing or stale.
     def car_pose(self):
         try:
             t = self.tf_buffer.lookup_transform(self.raceline_frame, self.base_frame, Time())
@@ -218,8 +218,8 @@ class PurePursuit(Node):
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         return t.transform.translation.x, t.transform.translation.y, yaw
 
+    # Return the nearest path index, searched only near the previous one so crossings/close sections don't jump.
     def find_nearest(self, x, y):
-        """Nearest raceline index; only near the previous one so crossings/close sections don't jump."""
         if self.nearest is None:
             candidates = np.arange(len(self.xy))
         elif self.closed:
@@ -229,8 +229,8 @@ class PurePursuit(Node):
         d2 = np.sum((self.xy[candidates] - (x, y)) ** 2, axis=1)
         return int(candidates[np.argmin(d2)])
 
+    # Return the point 'distance' metres further along the path from point index (interpolated).
     def point_ahead(self, index, distance):
-        """Point 'distance' metres further along the raceline from point index (interpolated)."""
         if not self.closed:
             # open trajectory: stop at its end point
             target = min(self.s[index] + distance, self.s[-1])
@@ -245,6 +245,7 @@ class PurePursuit(Node):
         t = (target - self.s[i]) / seg if seg > 1e-9 else 0.0
         return self.xy[i] + t * (self.xy[j] - self.xy[i])
 
+    # Change the tracking state and log the message only when the state changes.
     def set_state(self, state, message):
         if state != self.state:
             # Separate calls: rclpy fixes the severity of each logging call site
@@ -254,8 +255,7 @@ class PurePursuit(Node):
                 self.get_logger().warn(message)
             self.state = state
 
-    # ------------------------------------------------------------------ output
-
+    # Publish a drive command with the given speed and steering angle.
     def publish(self, speed, steering):
         msg = AckermannDriveStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -264,6 +264,7 @@ class PurePursuit(Node):
         msg.drive.steering_angle = float(steering)
         self.drive_pub.publish(msg)
 
+    # Publish the followed path for RViz.
     def publish_path(self):
         path = Path()
         path.header.frame_id = self.raceline_frame
@@ -277,6 +278,7 @@ class PurePursuit(Node):
             path.poses.append(pose)
         self.path_pub.publish(path)
 
+    # Publish the lookahead goal point as an RViz marker.
     def publish_goal(self, x, y):
         marker = Marker()
         marker.header.frame_id = self.raceline_frame
@@ -290,14 +292,17 @@ class PurePursuit(Node):
         marker.color.r, marker.color.g, marker.color.b, marker.color.a = 1.0, 0.5, 0.0, 1.0
         self.goal_pub.publish(marker)
 
+    # Publish a stop command (speed 0, steering straight).
     def stop(self):
         self.publish(0.0, 0.0)
 
 
+# Limit a value to the range [low, high].
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+# Start the node, spin until Ctrl+C, and leave the car stopped.
 def main(args=None):
     rclpy.init(args=args)
     try:

@@ -13,25 +13,18 @@ from sensor_msgs.msg import Imu
 SENSOR_PARAMS = ('imu.gyro_noise_std', 'imu.accel_noise_std')
 
 
+# Return the TF frame in the node's namespace (/arcsf1tenth + imu -> arcsf1tenth/imu, no namespace -> imu).
 def namespaced_frame(node, name):
-    """TF frame in the node's namespace: /arcsf1tenth + imu -> arcsf1tenth/imu (no namespace -> imu)."""
     namespace = node.get_namespace().strip('/')
     return f'{namespace}/{name}' if namespace else name
 
 
 class GazeboImu(Node):
-    """Simulated IMU driver: gazebo/imu -> imu, like the MCU's IMU output on the real car.
-
-    - sets header.frame_id to the URDF IMU frame (Gazebo stamps its own scoped
-      sensor name, which does not exist in TF)
-    - fills the covariance fields from the IMU noise (Gazebo leaves them zero)
-
-    Noise values come from sensors.yaml, the same file the Gazebo IMU noise uses.
-    """
-
+    # Set up the node: load the IMU noise, build the covariances, create the publisher and subscriber.
     def __init__(self):
         super().__init__('gazebo_imu')
 
+        # Parameters
         # IMU noise: no defaults, must come from arcsf1tenth_description/config/sensors.yaml
         for name in SENSOR_PARAMS:
             self.declare_parameter(name, Parameter.Type.DOUBLE)
@@ -56,9 +49,27 @@ class GazeboImu(Node):
         self.gyro_cov = [gyro_var, 0.0, 0.0, 0.0, gyro_var, 0.0, 0.0, 0.0, gyro_var]
         self.accel_cov = [accel_var, 0.0, 0.0, 0.0, accel_var, 0.0, 0.0, 0.0, accel_var]
 
+        # Variables
+
+        # Publishers
         self.imu_pub = self.create_publisher(Imu, 'imu', 50)
+
+        # Subscribers
         self.create_subscription(Imu, 'gazebo/imu', self.imu_callback, 50)
 
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
+
+    # Republish the Gazebo IMU message with the URDF frame and the noise covariances.
     def imu_callback(self, msg):
         msg.header.frame_id = self.frame_id
         msg.angular_velocity_covariance = self.gyro_cov
@@ -66,6 +77,7 @@ class GazeboImu(Node):
         self.imu_pub.publish(msg)
 
 
+# Start the node and spin until Ctrl+C.
 def main(args=None):
     rclpy.init(args=args)
     try:

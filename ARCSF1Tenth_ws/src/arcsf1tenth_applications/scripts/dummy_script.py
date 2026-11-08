@@ -6,9 +6,32 @@ from rclpy.node import Node
 
 
 class DummyNode(Node):
+    # Create the empty dummy node.
     def __init__(self):
         super().__init__('dummy_node')
 
+        # Parameters
+
+        # Variables
+
+        # Publishers
+
+        # Subscribers
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
+
+
+# Start the node and spin until Ctrl+C.
 def main(args=None):
     rclpy.init(args=args)
     node = DummyNode()

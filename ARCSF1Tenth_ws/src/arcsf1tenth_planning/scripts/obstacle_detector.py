@@ -1,18 +1,4 @@
 #!/usr/bin/python3
-"""Obstacles = lidar points that are not walls of the saved map, in the Frenet frame.
-
-    scan ──► points in the map frame (TF) ──► drop points near a map wall / outside the map
-         ──► clusters (neighbouring beams closer than cluster_gap) ──► Frenet (s, d) extent
-         ──► keep clusters inside the track ──► obstacles (ObstacleArray) + obstacles/markers
-
-    map (map_server, latched) ── distance to the nearest wall per cell (computed once)
-    global_trajectory (frenet_node) ── Frenet frame + track widths
-    frenet/state (frenet_node) ── where the car is on the path (projection search hint)
-
-Shared by every planner (yhom_*, non_*). Needs slam:=localization (the saved map).
-Points within wall_margin of a map wall are treated as wall, so an obstacle closer than
-that to a wall is not detected.
-"""
 
 import math
 
@@ -29,14 +15,17 @@ from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from arcsf1tenth_planning.conversions import msg_to_global_path, namespaced_frame
+from arcsf1tenth_planning.utils.conversions import msg_to_global_path, namespaced_frame
 
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 
 class ObstacleDetector(Node):
+    # Set up the node: detection parameters, map/path state, subscribers and obstacle publishers.
     def __init__(self):
         super().__init__('obstacle_detector')
+
+        # Parameters
         self.declare_parameter('map_frame', namespaced_frame(self, 'map'))
         self.declare_parameter('wall_margin', 0.3)        # [m] points closer to a map wall = wall
         self.declare_parameter('max_range', 10.0)         # [m] ignore points further from the lidar
@@ -47,20 +36,37 @@ class ObstacleDetector(Node):
         p = lambda name: self.get_parameter(name).value
         self.map_frame = p('map_frame')
 
+        # Variables
         self.dist = None            # distance to the nearest wall per map cell [m]
         self.map_info = None
         self.path = None
         self.car_index = None
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        # Publishers
+        self.pub = self.create_publisher(ObstacleArray, 'obstacles', 10)
+        self.marker_pub = self.create_publisher(MarkerArray, 'obstacles/markers', 10)
+
+        # Subscribers
         self.create_subscription(OccupancyGrid, 'map', self.on_map, LATCHED)
         self.create_subscription(Trajectory, 'global_trajectory', self.on_path, LATCHED)
         self.create_subscription(FrenetState, 'frenet/state', self.on_state, 10)
         self.create_subscription(LaserScan, 'scan', self.on_scan, qos_profile_sensor_data)
-        self.pub = self.create_publisher(ObstacleArray, 'obstacles', 10)
-        self.marker_pub = self.create_publisher(MarkerArray, 'obstacles/markers', 10)
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
 
-    # ------------------------------------------------------------- inputs
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
+
+    # Compute the distance to the nearest wall for every map cell (once per map).
     def on_map(self, msg):
         grid = np.asarray(msg.data, dtype=np.int16).reshape(msg.info.height, msg.info.width)
         wall = (grid >= 65) | (grid < 0)       # occupied or unknown
@@ -68,14 +74,16 @@ class ObstacleDetector(Node):
         self.map_info = msg.info
         self.get_logger().info(f'map {msg.info.width} x {msg.info.height}: wall distance ready')
 
+    # Store the global path (Frenet frame and track widths).
     def on_path(self, msg):
         if msg.points:
             self.path = msg_to_global_path(msg)
 
+    # Store the car's path index as a hint for the projection search.
     def on_state(self, msg):
         self.car_index = msg.index
 
-    # ----------------------------------------------------------- detection
+    # Turn the scan into obstacles: drop map walls, cluster the rest, convert to Frenet, and publish.
     def on_scan(self, scan):
         if self.dist is None or self.path is None:
             return
@@ -119,9 +127,9 @@ class ObstacleDetector(Node):
         self.pub.publish(msg)
         self.publish_markers(msg)
 
+    # Group consecutive beams (scan order) whose points are closer than gap, wrapping around 360 deg.
     @staticmethod
     def clusters(mask, x, y, gap):
-        """Groups of consecutive beams (scan order) whose points are closer than gap; wraps 360 deg."""
         idx = np.flatnonzero(mask)
         if len(idx) == 0:
             return []
@@ -135,6 +143,7 @@ class ObstacleDetector(Node):
             groups[0] = groups.pop() + groups[0]   # first and last beam are neighbours (360 deg scan)
         return [np.array(g) for g in groups]
 
+    # Convert one point cluster to an Obstacle with its Frenet extent, or None if too big or outside the track.
     def to_frenet(self, px, py, max_size, track_margin):
         cx, cy = float(np.mean(px)), float(np.mean(py))
         radius = float(np.max(np.hypot(px - cx, py - cy)))
@@ -154,6 +163,7 @@ class ObstacleDetector(Node):
                         s_start=float(path.wrap_s(s_c + np.min(rel))), s_end=float(path.wrap_s(s_c + np.max(rel))),
                         d_center=float(d_c), d_min=d_min, d_max=d_max)
 
+    # Publish the obstacles as RViz cylinder markers.
     def publish_markers(self, msg):
         markers = MarkerArray()
         clear = Marker()
@@ -172,6 +182,7 @@ class ObstacleDetector(Node):
         self.marker_pub.publish(markers)
 
 
+# Start the node and spin until Ctrl+C.
 def main():
     rclpy.init()
     node = ObstacleDetector()

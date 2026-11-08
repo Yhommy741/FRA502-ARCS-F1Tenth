@@ -1,19 +1,4 @@
 #!/usr/bin/python3
-"""yhom's local planner: Frenet optimal obstacle avoidance (frenet_optimal.py).
-
-    global_trajectory (frenet_node) ─┐
-    frenet/state      (frenet_node) ─┼──► yhom_local_planner ──► yhom/local_trajectory (Trajectory, open)
-    obstacles   (obstacle_detector) ─┘                       ──► yhom/local_path       (RViz)
-
-Runs every cycle, with or without obstacles (without, the best path is the global path);
-yhom_state_machine decides when the car follows it. An EMPTY trajectory means no
-collision-free path was found (the state machine then stops the car).
-
-Continuity: the new plan starts from where the previous plan says the car should be
-(d, d', d'' at the car's s), as long as the car is close to it. This keeps the path from
-jumping every cycle. If the car is further than replan_distance off, it starts from the
-measured state instead.
-"""
 
 import math
 import sys
@@ -29,16 +14,19 @@ from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from rclpy.time import Time
 
-from arcsf1tenth_planning.conversions import arrays_to_msg, msg_to_global_path, trajectory_to_path
-from arcsf1tenth_planning.frenet_optimal import PlannerParams, plan
+from arcsf1tenth_planning.utils.conversions import arrays_to_msg, msg_to_global_path, trajectory_to_path
+from arcsf1tenth_planning.frenet.frenet_optimal import PlannerParams, plan
 
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 VEHICLE = ('wheelbase', 'max_steering_angle', 'max_speed', 'footprint_front', 'footprint_rear', 'footprint_width')
 
 
 class YhomLocalPlanner(Node):
+    # Set up the node: vehicle and planner parameters, plan state, subscribers, publishers and replanning timer.
     def __init__(self):
         super().__init__('yhom_local_planner')
+
+        # Parameters
         for name in VEHICLE:   # from arcsf1tenth_description/config/vehicle.yaml
             self.declare_parameter(name, Parameter.Type.DOUBLE)
         try:
@@ -70,33 +58,53 @@ class YhomLocalPlanner(Node):
         self.replan_distance = p('replan_distance')
         self.obstacle_timeout = p('obstacle_timeout')
 
+        # Variables
         self.path = None
         self.frame = None
         self.state = None
         self.obstacles = None
         self.previous = None          # last PlanResult
         self.last_ok = None
+
+        # Publishers
+        self.traj_pub = self.create_publisher(Trajectory, 'yhom/local_trajectory', 10)
+        self.path_pub = self.create_publisher(Path, 'yhom/local_path', 10)
+
+        # Subscribers
         self.create_subscription(Trajectory, 'global_trajectory', self.on_path, LATCHED)
         self.create_subscription(FrenetState, 'frenet/state', self.on_state, 10)
         self.create_subscription(ObstacleArray, 'obstacles', self.on_obstacles, 10)
-        self.traj_pub = self.create_publisher(Trajectory, 'yhom/local_trajectory', 10)
-        self.path_pub = self.create_publisher(Path, 'yhom/local_path', 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(1.0 / p('rate'), self.step)
 
+        # On Start
+
+    # Store the global path and reset the previous plan.
     def on_path(self, msg):
         if msg.points:
             self.path = msg_to_global_path(msg)
             self.frame = msg.header.frame_id
             self.previous = None
 
+    # Store the latest Frenet state of the car.
     def on_state(self, msg):
         self.state = msg
 
+    # Store the latest obstacles.
     def on_obstacles(self, msg):
         self.obstacles = msg
 
+    # Return (d, d', d'') to start the plan from: the previous plan at the car's s, or the measured state.
     def initial_state(self, s, d, yaw_error):
-        """(d, d', d'') to start the plan from: the previous plan at the car's s, or the measured state."""
         prev = self.previous
         if prev is not None and prev.ok:
             rel = self.path.ds(prev.s, s)
@@ -106,6 +114,7 @@ class YhomLocalPlanner(Node):
         kappa = float(self.path.interp(self.path.kappa, s))
         return d, (1.0 - kappa * d) * math.tan(yaw_error), 0.0
 
+    # Plan the best Frenet path around the current obstacles and publish it (empty if none was found).
     def step(self):
         if self.path is None or self.state is None:
             return
@@ -138,6 +147,7 @@ class YhomLocalPlanner(Node):
             self.last_ok = result.ok
 
 
+# Start the node and spin until Ctrl+C.
 def main():
     rclpy.init()
     try:

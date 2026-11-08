@@ -23,9 +23,11 @@ ARCS F1Tenth keyboard teleop
 
 
 class KeyboardTeleop(Node):
+    # Set up the node: teleop parameters, speed/steering state and the drive publisher.
     def __init__(self):
         super().__init__('keyboard_teleop')
 
+        # Parameters
         # Run by hand (not from the launch file), so it can't see the launch 'namespace'
         # argument: for another namespace use -p drive_topic:=/<namespace>/drive
         self.declare_parameter('drive_topic', '/arcsf1tenth/drive')
@@ -50,15 +52,32 @@ class KeyboardTeleop(Node):
         self.period = 1.0 / self.get_parameter('rate').value
 
         drive_topic = self.get_parameter('drive_topic').value
-        self.drive_pub = self.create_publisher(AckermannDriveStamped, drive_topic, 10)
 
+        # Variables
         self.speed = 0.0
         self.steering_angle = 0.0
-
         self.steer_dir = 0          # +1 left, -1 right, 0 none (key held)
         self.steer_repeating = False
         self.last_steer_key = 0.0
 
+        # Publishers
+        self.drive_pub = self.create_publisher(AckermannDriveStamped, drive_topic, 10)
+
+        # Subscribers
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
+
+    # Apply one key press to the speed or the steering direction.
     def handle_key(self, key, now):
         if key == 'w':
             self.speed += self.speed_step
@@ -79,8 +98,8 @@ class KeyboardTeleop(Node):
 
         self.speed = round(clamp(self.speed, -self.max_speed, self.max_speed), 3)
 
+    # Steer toward full lock while a/d is held, and back to straight when released.
     def update_steering(self, now, dt):
-        """Steer toward full lock while a/d is held, back to straight when released."""
         timeout = self.hold_timeout if self.steer_repeating else self.hold_timeout_first
         if self.steer_dir != 0 and now - self.last_steer_key > timeout:
             self.steer_dir = 0
@@ -91,6 +110,7 @@ class KeyboardTeleop(Node):
         step = (self.center_rate if toward_center else self.steer_rate) * dt
         self.steering_angle = clamp(target, self.steering_angle - step, self.steering_angle + step)
 
+    # Publish the current speed and steering angle as a drive command.
     def publish(self):
         msg = AckermannDriveStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -99,25 +119,26 @@ class KeyboardTeleop(Node):
         msg.drive.steering_angle = self.steering_angle
         self.drive_pub.publish(msg)
 
+    # Return the one-line speed/steering status shown in the terminal.
     def status(self):
         return f'\rspeed: {self.speed:+5.2f} m/s   steering: {self.steering_angle:+5.3f} rad   '
 
 
+# Return all keys pressed since the last call ('' if none within timeout).
 def get_keys(timeout):
-    """Return all keys pressed since the last call ('' if none within timeout).
-
-    Reads the raw file descriptor instead of sys.stdin, whose internal buffer
-    would hide queued keys from select() (e.g. when a key is held down).
-    """
+    # Reads the raw file descriptor instead of sys.stdin, whose internal buffer
+    # would hide queued keys from select() (e.g. when a key is held down).
     fd = sys.stdin.fileno()
     ready, _, _ = select.select([fd], [], [], timeout)
     return os.read(fd, 1024).decode(errors='ignore') if ready else ''
 
 
+# Limit a value to the range [low, high].
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+# Run the keyboard loop: read keys, update speed/steering, publish, and stop the car on exit.
 def main(args=None):
     if not sys.stdin.isatty():
         print('keyboard.py needs an interactive terminal: run it with "ros2 run", not from a launch file.')

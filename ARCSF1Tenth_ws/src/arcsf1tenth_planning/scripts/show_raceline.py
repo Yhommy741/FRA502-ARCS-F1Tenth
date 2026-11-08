@@ -1,21 +1,13 @@
 #!/usr/bin/python3
-"""Show a map with its centerline and raceline in a matplotlib window.
-
-By default it looks next to the map for <map>_centerline.csv and <map>_raceline.csv
-(written by generate_raceline.py). Use --centerline / --raceline for other files,
-e.g. the original F1TENTH centerline.csv / raceline.csv.
-
-Usage:
-  show_raceline.py <map.yaml | track name> [--centerline FILE] [--raceline FILE] [--start X Y YAW] [--save FILE]
-"""
 
 import argparse
 import os
 
-from arcsf1tenth_planning.plotting import load_centerline, load_map_image, load_raceline, plot_track
-from arcsf1tenth_planning.tracks import resolve_map
+from arcsf1tenth_planning.utils.plotting import load_centerline, load_map_image, load_raceline, plot_track
+from arcsf1tenth_planning.utils.tracks import resolve_map
 
 
+# Show the map with the centerline and the raceline of a track.
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('map_yaml', help='map yaml (e.g. cartographer_map.yaml) or a track name (e.g. brands_hatch)')

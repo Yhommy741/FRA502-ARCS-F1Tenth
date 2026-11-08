@@ -1,35 +1,3 @@
-"""Kinodynamic RRT for a car-like robot (kinematic bicycle model, forward only).
-
-State  q = (x, y, yaw, delta): rear-axle position, heading, steering angle.
-Control u = steering command delta_cmd from n_controls values in [-max_steer, max_steer].
-Motion (per metre of travel s, constant forward speed):
-
-    dx/ds = cos(yaw)     dy/ds = sin(yaw)     dyaw/ds = tan(delta) / wheelbase
-    d(delta)/ds = clip(delta_cmd - delta, +-steer_rate / speed)     (servo slew rate limit)
-
-So every edge is drivable: curvature never exceeds tan(max_steer) / wheelbase and the
-steering never changes faster than the servo can turn it.
-
-Algorithm (one call to plan()):
-
-    tree = {start}
-    repeat until time_budget / max_iterations / max_nodes:
-        sample a point  (goal with probability goal_bias, otherwise sample_fn(): e.g. near the track)
-        nearest node    min  distance + w_heading * |bearing to sample - yaw|   (nodes facing away excluded)
-        extend          propagate every control for edge_length metres from that node,
-                        drop the ones that collide, keep the one ending closest to the sample
-                        (a node whose every control collided max_fails times is a dead end:
-                        facing a wall; it is not picked again)
-        goal reached    some edge sample passes the goal gate: a line through the goal
-                        across its heading, |sideways| < goal_tolerance, up to goal_depth past
-                        it, heading within goal_yaw_tolerance (= back on the reference path
-                        past the obstacle, not one exact point): candidate solution
-    after the first solution, refine_iterations more iterations keep the cheapest one
-    cost = arc length + w_steer * |steering change| (smoother paths win)
-
-No ROS here: scripts/non_rrt_planner.py wraps it, test/test_kinodynamic_rrt.py runs it offline.
-"""
-
 import math
 import time
 from dataclasses import dataclass, field
@@ -37,6 +5,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 
+# Wrap an angle (or array) to [-pi, pi].
 def wrap_angle(a):
     return (np.asarray(a) + np.pi) % (2 * np.pi) - np.pi
 
@@ -78,9 +47,8 @@ class RRTResult:
     edges: list = field(default_factory=list)   # (xs, ys) of every tree edge, for visualization
 
 
+# Integrate the bicycle model from one state for K steering commands and return X, Y, YAW, DELTA.
 def propagate(x, y, yaw, delta, delta_cmd, p: RRTParams, length=None):
-    """Bicycle model from one state with K steering commands (array).
-    Returns X, Y, YAW, DELTA of shape (K, n): the samples after each integration step."""
     length = p.edge_length if length is None else length
     n = max(int(math.ceil(length / p.integration_step)), 1)
     ds = length / n
@@ -102,37 +70,31 @@ def propagate(x, y, yaw, delta, delta_cmd, p: RRTParams, length=None):
 
 
 class MotionPrimitives:
-    """Precomputed edges. Steering commands lie on a grid (n_controls values); only commands the
-    servo reaches within one edge (|cmd - delta| <= steer_rate / speed * edge_length) are allowed,
-    so every node after the root has its steering exactly on the grid, and the edge from
-    (steering i, command j) has the same shape in the node's local frame: compute it once,
-    then only rotate + translate it.  Faster at speed = fewer reachable commands = less agile."""
-
+    # Precompute the steering command grid and its servo-reachable range.
     def __init__(self, p: RRTParams):
         self.p = p
         self.grid = np.linspace(-p.max_steer, p.max_steer, p.n_controls)
         self.max_change = p.steer_rate / max(p.speed, 0.1) * p.edge_length
         self.table = [self._local(d0) for d0 in self.grid]
 
+    # Return the command indices the servo can reach from steering angle delta within one edge.
     def reachable(self, delta):
         return np.flatnonzero(np.abs(self.grid - delta) <= self.max_change + 1e-9)
 
+    # Return the reachable command indices around a steering angle that is not on the grid.
     def _local(self, delta):
         idx = self.reachable(delta)
         return (idx,) + propagate(0.0, 0.0, 0.0, delta, self.grid[idx], self.p)
 
+    # Return the edges from a node: (command indices, X, Y, YAW, DELTA).
     def expand(self, x, y, yaw, delta, index=None):
-        """Edges from a node: (command indices, X, Y, YAW, DELTA) with shape (K, n).
-        index = grid index of the node's steering (None: off the grid, e.g. the root)."""
         idx, lx, ly, lyaw, ld = self.table[index] if index is not None else self._local(delta)
         c, s = math.cos(yaw), math.sin(yaw)
         return idx, x + c * lx - s * ly, y + s * lx + c * ly, yaw + lyaw, ld
 
 
+# Grow a kinodynamic RRT from start toward goal and return the best collision-free path.
 def plan(start, goal, sample_fn, is_free, p: RRTParams, rng=None):
-    """start = (x, y, yaw, delta), goal = (x, y, yaw).
-    sample_fn(rng) -> (x, y): random point to grow toward.
-    is_free(X, Y, YAW) -> bool array of the same shape (footprint collision check)."""
     rng = np.random.default_rng() if rng is None else rng
     t0 = time.perf_counter()
     gx, gy, gyaw = goal
@@ -227,9 +189,8 @@ def plan(start, goal, sample_fn, is_free, p: RRTParams, rng=None):
                      iterations=iterations, nodes=n, plan_time=plan_time, edges=tree)
 
 
+# Return the speed along a path, capped by lateral acceleration and limited by acceleration/braking.
 def speed_profile(kappa, ds, v_max, a_lat, a_long, v_start, v_min=0.3):
-    """Speed along a path: v_max (scalar or array), capped by lateral acceleration a_lat in the
-    curvature, then limited to accelerate / brake at a_long (forward from v_start, backward)."""
     kappa = np.abs(np.asarray(kappa, dtype=float))
     v = np.minimum(np.broadcast_to(v_max, kappa.shape).astype(float),
                    np.sqrt(a_lat / np.maximum(kappa, 1e-6)))

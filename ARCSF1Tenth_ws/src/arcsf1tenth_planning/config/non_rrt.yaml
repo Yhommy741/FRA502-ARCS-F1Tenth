@@ -1,55 +1,54 @@
-# non's planning: kinodynamic RRT + path tracker (arcsf1tenth_bringup non_controller.launch.py). Vehicle size/limits come from
-# arcsf1tenth_description/config/vehicle.yaml; global path and frames from the launch file.
-
 /**/non_rrt_planner:
   ros__parameters:
     rate: 10.0                  # [Hz]
-    odom_topic: odometry/estimated   # speed + yaw rate (odometry/wheel with use_ekf:=false)
-    # Obstacle detection: lidar points that are not part of the saved map
-    detect_wall_margin: 0.3     # [m] points closer than this to a map wall = wall (localization error) ...
-    detect_range_gain: 0.035    # [m/m] ... plus this * range: a heading error moves far points more
-                                #       (0.035 = 2 deg; raise if walls still show up as obstacles in corners)
+    odom_topic: odometry/estimated
+
+    # Obstacle detection
+    detect_wall_margin: 0.3     # [m]
+    detect_range_gain: 0.035    # [m/m]
     max_range: 6.0              # [m]
-    neighbor_radius: 0.2        # [m] noise filter: a point needs min_neighbors others this close
-    min_neighbors: 2
+    neighbor_radius: 0.2        # [m]
+    min_neighbors: 2            # [const]
     obstacle_timeout: 0.5       # [s]
-    # Collision check (car footprint as 3 circles)
-    wall_margin: 0.05           # [m] car edge to map wall
-    obstacle_margin: 0.2        # [m] car edge to obstacle (planned paths keep this; tracking error eats ~0.1)
-    escape_margin: 0.05         # [m] used instead when the car is already inside obstacle_margin (else: stuck)
-    # When to plan, where to go
-    check_distance: 3.0         # [m] global path checked this far ahead ...
-    check_time: 1.5             # [s] ... plus speed * this
-    goal_after_obstacle: 2.0    # [m] RRT goal on the global path: no obstacle this far before it ...
-                                #     (and none within merge_length after it)
-    min_goal_distance: 4.0      # [m] and at least this far ahead of the car
+
+    # Collision check
+    wall_margin: 0.05           # [m]
+    obstacle_margin: 0.2        # [m]
+    escape_margin: 0.05         # [m]
+
+    # Trigger and goal
+    check_distance: 3.0         # [m]
+    check_time: 1.5             # [s]
+    goal_after_obstacle: 2.0    # [m]
+    min_goal_distance: 4.0      # [m]
     max_goal_distance: 10.0     # [m]
-    sample_width: 1.2           # [m] random samples within +- this of the global path
-    # Kinodynamic RRT (arcsf1tenth_planning/rrt/kinodynamic_rrt.py)
-    steer_margin: 0.9           # usable fraction of max_steering_angle
-    steer_rate_margin: 0.7      # usable fraction of max_steering_speed: the tracker needs headroom
-                                # for corrections, or the steering lags and the car cuts corners
-    edge_length: 0.5            # [m] travel per tree edge
-    integration_step: 0.05      # [m] bicycle model / collision check step
-    n_controls: 7               # steering grid (only servo-reachable ones are tried per edge)
-    goal_bias: 0.3
-    goal_tolerance: 0.4         # [m] goal gate half width
-    goal_depth: 1.0             # [m] goal gate depth
+    sample_width: 1.2           # [m]
+
+    # Kinodynamic RRT
+    steer_margin: 0.9           # [const]
+    steer_rate_margin: 0.7      # [const]
+    edge_length: 0.5            # [m]
+    integration_step: 0.05      # [m]
+    n_controls: 7               # [const]
+    goal_bias: 0.3              # [const]
+    goal_tolerance: 0.4         # [m]
+    goal_depth: 1.0             # [m]
     goal_yaw_tolerance: 0.4     # [rad]
-    w_heading: 1.0              # [m/rad] nearest-node metric
-    w_steer: 0.2                # [m/rad] cost of steering changes
-    max_fails: 3
-    max_nodes: 2000
-    max_iterations: 4000
-    refine_iterations: 100      # keep improving this many iterations after the first solution
-    time_budget: 0.08           # [s] per planning call (< 1 / rate)
+    w_heading: 1.0              # [m/rad]
+    w_steer: 0.2                # [m/rad]
+    max_fails: 3                # [const]
+    max_nodes: 2000             # [const]
+    max_iterations: 4000        # [const]
+    refine_iterations: 100      # [const]
+    time_budget: 0.08           # [s]
+
     # Following the plan
-    replan_distance: 0.4        # [m] car further than this from the RRT path: drop it, replan
-    merge_length: 3.0           # [m] global path appended after the RRT goal
+    replan_distance: 0.4        # [m]
+    merge_length: 3.0           # [m]
     avoid_speed_max: 2.0        # [m/s]
     min_plan_speed: 1.0         # [m/s]
     max_lateral_accel: 4.0      # [m/s^2]
-    stop_distance: 0.5          # [m] BLOCKED: stop this far before the blocked pose
+    stop_distance: 0.5          # [m]
     brake_decel: 2.0            # [m/s^2]
     global_ahead: 12.0          # [m]
     global_behind: 1.0          # [m]
@@ -59,15 +58,17 @@
   ros__parameters:
     rate: 50.0                  # [Hz]
     trajectory_timeout: 0.5     # [s]
-    controller: rear_wheel_feedback   # rear_wheel_feedback (curvature feedforward + feedback) | pure_pursuit
-    # rear_wheel_feedback: path errors decay (critically damped) over max(settle_distance_min, v * settle_time)
-    settle_time: 0.5            # [s] bigger = smoother, slower correction (raise if it weaves at speed)
+    controller: rear_wheel_feedback
+
+    # Rear wheel feedback
+    settle_time: 0.5            # [s]
     settle_distance_min: 0.6    # [m]
-    preview_time: 0.1           # [s] read the path curvature this far ahead (steering lag)
-    # pure_pursuit
+    preview_time: 0.1           # [s]
+
+    # Pure pursuit
     lookahead_min: 0.6          # [m]
     lookahead_max: 1.8          # [m]
     lookahead_gain: 0.35        # [s]
-    speed_scale: 1.0
+    speed_scale: 1.0            # [const]
     speed_min: 0.3              # [m/s]
     max_tracking_error: 1.0     # [m]

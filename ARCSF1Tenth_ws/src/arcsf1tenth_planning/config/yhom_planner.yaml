@@ -1,44 +1,53 @@
-# yhom's planning: Frenet optimal local planner + state machine (yhom_controller.launch.py).
-# Vehicle size/limits come from arcsf1tenth_description/config/vehicle.yaml.
-
 /**/yhom_local_planner:
   ros__parameters:
-    rate: 10.0                  # [Hz] replanning (lidar rate)
-    horizon: 12.0               # [m] planned distance ahead
-    step: 0.1                   # [m] point spacing
-    # Candidate maneuvers: quintic d(s) from the car to d_target over L, then hold d_target
-    maneuver_lengths: [3.0, 4.0, 5.0, 6.0, 8.0]   # [m] L
-    min_maneuver_time: 0.8      # [s] L >= speed * this: no sharp swerves at speed
-    d_step: 0.1                 # [m] spacing of the candidate d_target across the track
+    rate: 10.0                  # [Hz]
+    horizon: 12.0               # [m]
+    step: 0.1                   # [m]
+
+    # Candidate maneuvers
+    maneuver_lengths: [3.0, 4.0, 5.0, 6.0, 8.0]   # [m]
+    min_maneuver_time: 0.8      # [s]
+    d_step: 0.1                 # [m]
+
     # Safety
-    wall_margin: 0.15           # [m] car edge to wall
-    obstacle_margin: 0.25       # [m] car edge to obstacle (sideways and along the track)
-    clearance_preferred: 0.5    # [m] closer than this to an obstacle costs extra
-    replan_distance: 0.3        # [m] car this far off its plan: replan from the measured state
+    wall_margin: 0.15           # [m]
+    obstacle_margin: 0.25       # [m]
+    clearance_preferred: 0.5    # [m]
+    replan_distance: 0.3        # [m]
     obstacle_timeout: 0.5       # [s]
+
     # Speed
-    max_lateral_accel: 4.0      # [m/s^2] speed cap in the new curvature
-    avoid_speed_max: 2.0        # [m/s] speed cap while off the global path
-    # Cost weights (higher = more important)
-    w_jerk: 1.0                 # smooth swerve
-    w_offset: 2.0               # stay close to the global path
-    w_length: 1.0               # prefer short maneuvers (/ L)
-    w_consistency: 1.0          # keep the previous target (no zig-zag); keep < w_offset
-    w_clearance: 20.0           # keep clearance_preferred from obstacles
+    max_lateral_accel: 4.0      # [m/s^2]
+    avoid_speed_max: 2.0        # [m/s]
+
+    # Cost weights
+    w_jerk: 1.0                 # [const]
+    w_offset: 2.0               # [const]
+    w_length: 1.0               # [const]
+    w_consistency: 1.0          # [const]
+    w_clearance: 20.0           # [const]
 
 /**/yhom_state_machine:
   ros__parameters:
     rate: 20.0                  # [Hz]
-    trigger_distance: 3.0       # [m] react to an obstacle this far ahead ...
-    trigger_time: 1.5           # [s] ... plus speed * this
-    corridor_margin: 0.25       # [m] obstacle blocks the global path if within half car width + this
-    return_d: 0.15              # [m] back on the global path when |d| < this
-    min_avoid_time: 1.0         # [s] minimum time in AVOID (no flicker)
-    clear_time: 0.5             # [s] corridor clear / path found this long before trusting it (detection dropouts)
-    release_distance: 2.0       # [m] longer reach once in AVOID / BLOCKED (slowing down shortens the reach)
-    stop_distance: 1.0          # [m] BLOCKED: front bumper stops this far before the obstacle
-    brake_decel: 2.0            # [m/s^2] BLOCKED: braking profile
-    timeout: 0.5                # [s] inputs older than this are stale
-    global_ahead: 12.0          # [m] global path window sent to the controller
+
+    # Trigger
+    trigger_distance: 3.0       # [m]
+    trigger_time: 1.5           # [s]
+    corridor_margin: 0.25       # [m]
+
+    # Transitions
+    return_d: 0.15              # [m]
+    min_avoid_time: 1.0         # [s]
+    clear_time: 0.5             # [s]
+    release_distance: 2.0       # [m]
+    timeout: 0.5                # [s]
+
+    # Blocked
+    stop_distance: 1.0          # [m]
+    brake_decel: 2.0            # [m/s^2]
+
+    # Global window
+    global_ahead: 12.0          # [m]
     global_behind: 1.0          # [m]
     global_step: 0.1            # [m]

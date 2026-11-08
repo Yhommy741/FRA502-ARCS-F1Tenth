@@ -1,27 +1,15 @@
-"""Frenet frame of a closed path: Cartesian (x, y) <-> Frenet (s, d).
-
-    s = arc length along the path (0 .. length, wraps around: closed loop)
-    d = signed lateral offset, + = left of the path direction
-
-    d > 0 ──────────────── left wall
-            ↑ d
-    path  ─────●──────────►  s
-    d < 0 ──────────────── right wall
-
-Pure numpy, no ROS: used by frenet_node, obstacle_detector and the planners.
-"""
-
 import math
 
 import numpy as np
 
 
+# Wrap an angle (or array) to [-pi, pi).
 def wrap_angle(angle):
     return (angle + np.pi) % (2.0 * np.pi) - np.pi
 
 
+# Load a generate_raceline.py CSV as a dict of x, y, v arrays.
 def load_path_csv(path):
-    """generate_raceline.py CSV 's; x; y; psi; kappa; vx; ax' -> dict of arrays (x, y, v; psi/kappa recomputed)."""
     data = np.loadtxt(path, delimiter=';', comments='#', ndmin=2)
     if data.shape[1] < 6:
         raise ValueError(f'{path}: expected columns s; x; y; psi; kappa; vx; ...')
@@ -29,8 +17,7 @@ def load_path_csv(path):
 
 
 class FrenetPath:
-    """Closed path through points (x[i], y[i]); the last point connects back to the first."""
-
+    # Build the path: arc length, segment headings and curvature (track widths start unknown).
     def __init__(self, x, y, v=None):
         self.x = np.asarray(x, dtype=float)
         self.y = np.asarray(y, dtype=float)
@@ -54,34 +41,29 @@ class FrenetPath:
         self.d_left = np.full(n, np.inf)
         self.d_right = np.full(n, np.inf)
 
-    # ------------------------------------------------------------ s helpers
+    # Wrap an arc length into [0, length).
     def wrap_s(self, s):
         return np.mod(s, self.length)
 
+    # Return the signed distance along the path from s_from to s_to, in (-length/2, length/2].
     def ds(self, s_to, s_from):
-        """Signed distance along the path from s_from to s_to, in (-length/2, length/2]."""
         return (np.asarray(s_to) - s_from + 0.5 * self.length) % self.length - 0.5 * self.length
 
+    # Return the segment index containing s (wrapped).
     def index_at(self, s):
-        """Segment index containing s (s wrapped)."""
         s = self.wrap_s(s)
         return np.clip(np.searchsorted(self.s, s, side='right') - 1, 0, len(self.s) - 1)
 
+    # Interpolate a per-point array periodically at arc length s.
     def interp(self, values, s):
-        """Periodic linear interpolation of a per-point array at arc length(s) s."""
         s = self.wrap_s(np.asarray(s, dtype=float))
         i = self.index_at(s)
         j = (i + 1) % len(self.s)
         t = (s - self.s[i]) / self.seg_len[i]
         return values[i] + t * (values[j] - values[i])
 
-    # ------------------------------------------------------- conversions
+    # Project a Cartesian point onto the path and return (s, d, index), searching near hint if given.
     def project(self, x, y, hint=None, window=None):
-        """Cartesian -> Frenet. Returns (s, d, index).
-
-        hint/window: only search segments within `window` metres of the segment `hint`
-        (keeps the projection on the right part of the track where it passes close to itself).
-        """
         n = len(self.s)
         if hint is None or window is None:
             idx = np.arange(n)
@@ -99,8 +81,8 @@ class FrenetPath:
         d = math.copysign(math.hypot(cx[k], cy[k]), cross)
         return s, d, i
 
+    # Convert Frenet (s, d) to Cartesian (x, y); arrays allowed.
     def to_cartesian(self, s, d):
-        """Frenet -> Cartesian (arrays allowed). Returns (x, y)."""
         s = np.asarray(s, dtype=float)
         d = np.asarray(d, dtype=float)
         i = self.index_at(s)
@@ -110,8 +92,8 @@ class FrenetPath:
         psi = self.heading_at(s)
         return bx - d * np.sin(psi), by + d * np.cos(psi)
 
+    # Return the smooth path heading at s, interpolated between segment headings.
     def heading_at(self, s):
-        """Smooth path heading at s (interpolated between neighbouring segment headings)."""
         s = self.wrap_s(np.asarray(s, dtype=float))
         i = self.index_at(s)
         t = (s - self.s[i]) / self.seg_len[i]
@@ -120,20 +102,16 @@ class FrenetPath:
         j = (i + 1) % len(self.s)
         return h_point[i] + t * wrap_angle(h_point[j] - h_point[i])
 
+    # Return the path heading at every path point.
     def psi_point(self):
         if not hasattr(self, '_psi_point'):
             prev = np.roll(self.psi, 1)
             self._psi_point = prev + 0.5 * wrap_angle(self.psi - prev)
         return self._psi_point
 
-    # ---------------------------------------------------------- track width
+    # Measure the free space left and right of every path point in an occupancy grid.
     def set_widths_from_grid(self, grid, resolution, origin_x, origin_y, max_width=3.0,
                              occupied=65):
-        """Free space left/right of every path point from an occupancy grid (nav_msgs/OccupancyGrid data).
-
-        grid: 2D int array [row = y, col = x] (row 0 = origin_y), -1 unknown, 0..100 occupancy.
-        A cell counts as a wall when occupied >= `occupied` or unknown.
-        """
         h, w = grid.shape
         blocked = (grid >= occupied) | (grid < 0)
         steps = np.arange(resolution, max_width + 1e-9, resolution * 0.5)

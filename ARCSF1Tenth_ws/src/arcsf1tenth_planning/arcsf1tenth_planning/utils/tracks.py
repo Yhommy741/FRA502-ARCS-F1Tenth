@@ -11,12 +11,8 @@ SLAM_MAP = 'cartographer_map.yaml'
 MAP_NAMES = (SLAM_MAP, 'map.yaml')
 
 
+# Return the arcsf1tenth_tracks folder in the source tree, or the installed one as a fallback.
 def tracks_dir():
-    """arcsf1tenth_tracks in the SOURCE tree (outputs must land there, not in install/).
-
-    The workspace is two levels above the package's install prefix
-    (<ws>/install/arcsf1tenth_tracks). Falls back to the installed share folder.
-    """
     try:
         prefix = get_package_prefix('arcsf1tenth_tracks')
     except PackageNotFoundError:
@@ -29,13 +25,8 @@ def tracks_dir():
     return share
 
 
+# Return (map_yaml, default start pose [x, y, yaw]) from a map path or a track name.
 def resolve_map(arg):
-    """Map yaml path from a path or a track name.
-
-    Returns (map_yaml, start) where start is the default start pose [x, y, yaw]
-    in that map's frame: 0 0 0 for a SLAM map (the map starts where mapping
-    started), the track.yaml start_pose for the original map.
-    """
     if os.path.isfile(arg):
         return arg, None
 

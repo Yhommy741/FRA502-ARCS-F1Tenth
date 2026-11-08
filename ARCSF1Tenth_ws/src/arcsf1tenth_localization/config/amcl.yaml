@@ -1,77 +1,43 @@
-# AMCL (nav2_amcl): particle-filter localization on a saved map image, used by
-# slam:=localization. Cartographer only builds the map (slam:=mapping).
-#
-#   map_server ── map (cartographer_map.yaml/.pgm, fixed, never redrawn) ──┐
-#   scan (lidar) ──────────────────────────────────────────────────────────┼──► amcl ──► TF map → odom
-#   TF odom → base_footprint (EKF, odometry/estimated) ────────────────────┘        └──► amcl_pose
-#
-# How it works: a cloud of particles = possible car poses. When the car moves, every
-# particle moves with the odometry plus random noise (alpha1-4). Every scan, each particle
-# is scored by how well the scan fits the map walls from that pose (likelihood field), and
-# the cloud is resampled toward the good ones. The estimate follows the best particles.
-#
-# Frames, topics and the initial pose are set by the launch file (namespace, start pose).
-#
-# TUNING (measure with localization_error.py, one change per run):
-#   pose lags / jumps late           -> lower update_min_d / update_min_a
-#   pose jittery, noisy              -> lower alpha1-4, raise sigma_hit, more max_beams
-#   pose drifts away, cannot follow  -> raise alpha1-4 (particles spread wider), more particles
-#   snaps to wrong spot              -> lower alpha1-4, keep recovery_alpha_* = 0
-#   high CPU                         -> fewer max_beams / max_particles
-
-/**/amcl:                         # any namespace
+/**/amcl:
   ros__parameters:
-    # ---- motion model: how much the particles spread when the car moves ----
-    # Ackermann car: the differential model is the standard choice (moves along x, turns).
+    # Motion model
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
-    # Odometry noise, as a fraction of the motion. Our EKF odometry is good (wheel speed +
-    # gyro), so small values. Too small = particles cannot follow odometry errors (drift);
-    # too large = jittery pose.
-    alpha1: 0.1     # rotation noise from rotation
-    alpha2: 0.1     # rotation noise from translation
-    alpha3: 0.1     # translation noise from translation
-    alpha4: 0.1     # translation noise from rotation
-    alpha5: 0.1     # only used by the omni model
+    alpha1: 0.1                 # [const]
+    alpha2: 0.1                 # [const]
+    alpha3: 0.1                 # [const]
+    alpha4: 0.1                 # [const]
+    alpha5: 0.1                 # [const]
 
-    # ---- update rate: filter runs only after the car moved this much ----
-    # Nav2 defaults (0.25 m / 0.2 rad) are for slow indoor robots: at 3 m/s that is 12 Hz
-    # of corrections at best; small values = a correction on almost every scan (10 Hz).
-    update_min_d: 0.05    # [m]
-    update_min_a: 0.05    # [rad]
-    resample_interval: 1  # resample after every update
+    # Update rate
+    update_min_d: 0.05          # [m]
+    update_min_a: 0.05          # [rad]
+    resample_interval: 1        # [const]
 
-    # ---- particles ----
-    min_particles: 500
-    max_particles: 3000   # used while the pose is uncertain (KLD sampling adapts the number)
-    pf_err: 0.05
-    pf_z: 0.99
-    # Random particles when the fit gets bad ("kidnapped robot" recovery). 0 = off: on a
-    # race track with look-alike straights a random particle can win and snap the pose away.
-    recovery_alpha_slow: 0.0
-    recovery_alpha_fast: 0.0
+    # Particles
+    min_particles: 500          # [const]
+    max_particles: 3000         # [const]
+    pf_err: 0.05                # [const]
+    pf_z: 0.99                  # [const]
+    recovery_alpha_slow: 0.0    # [const]
+    recovery_alpha_fast: 0.0    # [const]
 
-    # ---- laser model: how a scan is scored against the map ----
+    # Laser model
     laser_model_type: "likelihood_field"
-    max_beams: 120              # beams used per scan (of 500); more = more accurate, more CPU
-    laser_min_range: 0.3        # [m] same as Cartographer: skip hits on the car body (real lidar)
-    laser_max_range: 12.0       # [m] RPLidar C1 range (no-return beams are skipped)
-    laser_likelihood_max_dist: 1.0  # [m] how far from a wall a hit still gets some score
-    # Score mix: z_hit = hit near a wall (good measurement), z_rand = random/unexplained hit.
-    # Sim lidar is clean (noise 0.015 m): trust hits strongly. Real car: raise z_rand (0.2-0.3)
-    # for people, cones, reflections not in the map.
-    z_hit: 0.9
-    z_rand: 0.1
-    z_max: 0.05                 # beam model only
-    z_short: 0.05               # beam model only
-    sigma_hit: 0.1              # [m] spread of a good hit around the wall (map 0.05 m + lidar noise)
-    lambda_short: 0.1           # beam model only
+    max_beams: 120              # [const]
+    laser_min_range: 0.3        # [m]
+    laser_max_range: 12.0       # [m]
+    laser_likelihood_max_dist: 1.0  # [m]
+    z_hit: 0.9                  # [const]
+    z_rand: 0.1                 # [const]
+    z_max: 0.05                 # [const]
+    z_short: 0.05               # [const]
+    sigma_hit: 0.1              # [m]
+    lambda_short: 0.1           # [const]
     do_beamskip: false
 
-    # ---- output ----
-    tf_broadcast: true          # publish map -> odom (replaces Cartographer's)
-    # map -> odom is stamped this far ahead so TF lookups at "now" do not fail between
-    # updates. Small = map -> odom follows corrections sooner.
+    # Output
+    tf_broadcast: true
     transform_tolerance: 0.2    # [s]
-    save_pose_rate: 0.5
+    save_pose_rate: 0.5         # [Hz]
     always_reset_initial_pose: false
     first_map_only: false

@@ -1,22 +1,4 @@
 #!/usr/bin/python3
-"""Click in RViz to place static obstacles in the Gazebo simulation.
-
-    RViz "Publish Point" tool (toolbar, shortcut P) ── /clicked_point ──► obstacle_spawner ──► Gazebo
-      click on free track      -> spawn an obstacle there
-      click on an obstacle     -> remove it (within remove_radius)
-    ros2 service call /arcsf1tenth/clear_obstacles std_srvs/srv/Trigger   -> remove all
-
-Obstacles are static (the car cannot push them), have collision (the car crashes into
-them) and are seen by the simulated lidar. They are NOT in the saved map: AMCL treats them
-as unexplained hits, and the controllers do not avoid them unless you make them.
-
-Started by simulation.launch.py. Parameters:
-  world          Gazebo world name (set by the launch file from the world file)
-  shape          box | cylinder
-  size           [m] box side / cylinder diameter
-  height         [m] (above the lidar plane, so the lidar sees it)
-  remove_radius  [m] a click closer than this to an obstacle removes it
-"""
 
 import math
 import subprocess
@@ -32,6 +14,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 GZ_TIMEOUT_MS = 3000
 
 
+# Build the SDF model string of one static, colliding obstacle.
 def obstacle_sdf(name, shape, size, height):
     if shape == 'cylinder':
         geometry = f'<cylinder><radius>{size / 2}</radius><length>{height}</length></cylinder>'
@@ -44,14 +27,17 @@ def obstacle_sdf(name, shape, size, height):
             '</visual></link></model></sdf>')
 
 
+# Escape text as a protobuf string literal for the gz --req argument.
 def gz_quote(text):
-    """Text as a protobuf string literal (inside the --req argument)."""
     return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
 class ObstacleSpawner(Node):
+    # Set up the node: parameters, TF, the click subscriber and the clear service.
     def __init__(self):
         super().__init__('obstacle_spawner')
+
+        # Parameters
         self.declare_parameter('world', 'empty')
         self.declare_parameter('world_frame', 'world')
         self.declare_parameter('shape', 'box')
@@ -61,19 +47,35 @@ class ObstacleSpawner(Node):
         self.world = self.get_parameter('world').value
         self.world_frame = self.get_parameter('world_frame').value
 
+        # Variables
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.obstacles = {}  # name -> (x, y) in the world frame
         self.counter = 0
         self.lock = threading.Lock()
 
+        # Publishers
+
+        # Subscribers
         # RViz publishes clicked points on the global /clicked_point
         self.create_subscription(PointStamped, '/clicked_point', self.on_click, 10)
+
+        # Service Servers
         self.create_service(Trigger, 'clear_obstacles', self.on_clear)
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
         self.get_logger().info(
             f'world "{self.world}": click with RViz "Publish Point" to add/remove obstacles')
 
-    # ----------------------------------------------------------------- input
+    # Spawn an obstacle at the clicked point, or remove the obstacles near it.
     def on_click(self, msg):
         point = self.to_world(msg)
         if point is None:
@@ -92,6 +94,7 @@ class ObstacleSpawner(Node):
                 name = f'obstacle_{self.counter}'
             self.run_async(self.spawn, name, x, y)
 
+    # Service callback: remove every spawned obstacle and report how many were removed.
     def on_clear(self, request, response):
         with self.lock:
             names = list(self.obstacles)
@@ -101,8 +104,8 @@ class ObstacleSpawner(Node):
                             + (f', failed: {failed}' if failed else ''))
         return response
 
+    # Transform a clicked point from the RViz fixed frame to (x, y) in the Gazebo world frame.
     def to_world(self, msg):
-        """Clicked point (RViz fixed frame) -> (x, y) in the Gazebo world frame."""
         if msg.header.frame_id in ('', self.world_frame):
             return msg.point.x, msg.point.y
         try:
@@ -116,11 +119,11 @@ class ObstacleSpawner(Node):
         return (t.x + math.cos(yaw) * px - math.sin(yaw) * py,
                 t.y + math.sin(yaw) * px + math.cos(yaw) * py)
 
-    # ---------------------------------------------------------------- Gazebo
+    # Run a function in a background thread, because gz service calls can take a few 100 ms.
     def run_async(self, func, *args):
-        """gz service calls take up to a few 100 ms: keep the callbacks free."""
         threading.Thread(target=func, args=args, daemon=True).start()
 
+    # Call a Gazebo world service through the gz CLI and return True if it succeeded.
     def gz_call(self, service, reqtype, request):
         cmd = ['gz', 'service', '-s', f'/world/{self.world}/{service}', '--reqtype', reqtype,
                '--reptype', 'gz.msgs.Boolean', '--timeout', str(GZ_TIMEOUT_MS), '--req', request]
@@ -134,6 +137,7 @@ class ObstacleSpawner(Node):
             return False
         return True
 
+    # Spawn an obstacle model in Gazebo at (x, y) and remember it.
     def spawn(self, name, x, y):
         shape = self.get_parameter('shape').value
         size = float(self.get_parameter('size').value)
@@ -147,6 +151,7 @@ class ObstacleSpawner(Node):
             return True
         return False
 
+    # Remove an obstacle model from Gazebo and forget it.
     def remove(self, name):
         if self.gz_call('remove', 'gz.msgs.Entity', f'name: "{name}", type: MODEL'):
             with self.lock:
@@ -156,6 +161,7 @@ class ObstacleSpawner(Node):
         return False
 
 
+# Start the node and spin until Ctrl+C.
 def main():
     rclpy.init()
     node = ObstacleSpawner()

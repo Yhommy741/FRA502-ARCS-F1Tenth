@@ -1,31 +1,8 @@
-"""Frenet optimal local planner (sampling, Werling et al. 2010, in the s domain).
-
-Every cycle, from the car's current Frenet state (d, d' = dd/ds, d'' = d2d/ds2):
-
-  1. sample candidate lateral paths d(s): a quintic polynomial from the current (d, d', d'')
-     to a target offset d_target with d' = d'' = 0, over a maneuver length L, then hold
-     d_target to the end of the horizon:
-
-        d ▲          ___________ d_target          one candidate per (d_target, L)
-          │        /
-          │_______/   quintic over L
-          └─────────────────────────► s
-
-  2. reject candidates that leave the track (car width + wall margin), hit an obstacle
-     (car outline + safety margin, in Frenet coordinates) or curve tighter than the car can steer
-  3. pick the cheapest:  J = w_jerk * jerk + w_offset * d_target^2 + w_length / L
-                             + w_consistency * (d_target - previous d_target)^2
-                             + w_clearance * (too close to an obstacle)^2
-  4. speed: global path speed, capped by the lateral acceleration in the new curvature
-
-Pure numpy, no ROS (yhom_local_planner.py wraps it).
-"""
-
 from dataclasses import dataclass, field
 
 import numpy as np
 
-from arcsf1tenth_planning.frenet import FrenetPath, wrap_angle
+from arcsf1tenth_planning.frenet.frenet_path import FrenetPath, wrap_angle
 
 
 @dataclass
@@ -70,8 +47,8 @@ class PlanResult:
     reason: str = ''
 
 
+# Return the quintic coefficients a0..a5 from (d, d', d'') at the start to (d1, 0, 0) at length L.
 def quintic(d0, dd0, ddd0, d1, length):
-    """Coefficients a0..a5 of d(σ) with d(0)=d0, d'(0)=dd0, d''(0)=ddd0, d(L)=d1, d'(L)=d''(L)=0."""
     L = length
     a0, a1, a2 = d0, dd0, 0.5 * ddd0
     A = np.array([[L ** 3, L ** 4, L ** 5],
@@ -84,6 +61,7 @@ def quintic(d0, dd0, ddd0, d1, length):
     return np.array([a0, a1, a2, a3, a4, a5])
 
 
+# Evaluate a quintic and its first three derivatives at sigma.
 def eval_quintic(c, sigma):
     d = c[0] + c[1] * sigma + c[2] * sigma ** 2 + c[3] * sigma ** 3 + c[4] * sigma ** 4 + c[5] * sigma ** 5
     d1 = c[1] + 2 * c[2] * sigma + 3 * c[3] * sigma ** 2 + 4 * c[4] * sigma ** 3 + 5 * c[5] * sigma ** 4
@@ -92,9 +70,9 @@ def eval_quintic(c, sigma):
     return d, d1, d2, d3
 
 
+# Sample lateral candidate paths, reject unsafe ones, and return the cheapest as a PlanResult.
 def plan(path: FrenetPath, s0, d0, dd0, ddd0, speed, obstacles, params: PlannerParams,
          previous_d_target=None):
-    """Best lateral path from (s0, d0, d', d''). obstacles: list of (s_start, s_end, d_min, d_max)."""
     p = params
     sigma = np.arange(0.0, p.horizon + 1e-9, p.step)          # distance ahead of the car
     s_abs = s0 + sigma                                        # unwrapped global s
@@ -186,11 +164,7 @@ def plan(path: FrenetPath, s0, d0, dd0, ddd0, speed, obstacles, params: PlannerP
                       candidates=count, feasible=feasible)
 
 
+# Return the curvature of the path offset by d from a reference with curvature k_ref.
 def _curvature(k_ref, d, d1, d2):
-    """Curvature of P(s) = r(s) + d(s) n(s) around a reference with curvature k_ref.
-
-    With a = 1 - k_ref d:  P' = a t + d' n,  P'' = -2 k_ref d' t + (a k_ref + d'') n
-    (dk_ref/ds neglected), so  kappa = (a (a k_ref + d'') + 2 k_ref d'^2) / (a^2 + d'^2)^(3/2).
-    """
     a = 1.0 - k_ref * d
     return (a * (a * k_ref + d2) + 2.0 * k_ref * d1 ** 2) / (a ** 2 + d1 ** 2) ** 1.5

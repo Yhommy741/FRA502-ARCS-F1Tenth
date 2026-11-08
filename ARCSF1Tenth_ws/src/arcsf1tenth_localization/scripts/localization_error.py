@@ -1,25 +1,4 @@
 #!/usr/bin/python3
-"""Localization error in simulation: estimated pose vs Gazebo ground truth.
-
-  ros2 run arcsf1tenth_localization localization_error.py
-  ros2 run arcsf1tenth_localization localization_error.py --ros-args -p csv:=/tmp/loc_error.csv
-
-    estimate      TF world -> <ns>/map -> <ns>/odom -> <ns>/base_footprint
-                  (world -> map = the track start pose, map -> odom = AMCL)
-    ground truth  ground_truth/odometry (Gazebo, world frame)
-
-The error is given in the car frame:
-    lateral       sideways error  -> pushes the car off the raceline
-    longitudinal  along-track error -> mainly brakes/accelerates at the wrong spot
-    yaw           heading error
-
-Prints once per second, plus RMS / max over the run. Ctrl-C prints the summary.
-Read it like this:
-    constant offset from the start   -> start pose / map origin mismatch
-    error growing, then jumping back -> corrections arrive but late or weak
-    error growing without jumps      -> no matches found (car lost)
-    mostly longitudinal on straights -> scan matching slides along corridors
-"""
 
 import math
 
@@ -31,17 +10,22 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 
 
+# Return the yaw angle of a quaternion.
 def yaw_of(q):
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
+# Wrap an angle to [-pi, pi].
 def wrap(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
 
 
 class LocalizationError(Node):
+    # Set up the node: frames, error statistics, optional CSV, ground-truth subscriber and sample timer.
     def __init__(self):
         super().__init__('localization_error', namespace='arcsf1tenth')
+
+        # Parameters
         self.declare_parameter('world_frame', 'world')
         self.declare_parameter('base_frame', 'base_footprint')  # namespaced automatically
         self.declare_parameter('rate', 10.0)                     # [Hz] samples
@@ -53,11 +37,10 @@ class LocalizationError(Node):
         self.base_frame = f'{ns}/{base}' if ns else base
         self.world_frame = self.get_parameter('world_frame').value
 
+        # Variables
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.truth = None
-        self.create_subscription(Odometry, 'ground_truth/odometry', self.on_truth, 10)
-
         self.samples = 0
         self.sum_sq = {'lat': 0.0, 'lon': 0.0, 'yaw': 0.0}
         self.max_abs = {'lat': 0.0, 'lon': 0.0, 'yaw': 0.0}
@@ -71,13 +54,31 @@ class LocalizationError(Node):
             self.csv.write('t,distance_m,lateral_m,longitudinal_m,yaw_rad,speed_mps\n')
             self.get_logger().info(f'writing {path}')
 
+        # Publishers
+
+        # Subscribers
+        self.create_subscription(Odometry, 'ground_truth/odometry', self.on_truth, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(1.0 / self.get_parameter('rate').value, self.sample)
+
+        # On Start
         self.get_logger().info(f'estimate {self.world_frame} -> {self.base_frame} vs '
                                f'{self.get_namespace().rstrip("/")}/ground_truth/odometry')
 
+    # Store the latest ground-truth odometry.
     def on_truth(self, msg):
         self.truth = msg
 
+    # Compare the estimated pose with the ground truth, update the statistics, and log/print the error.
     def sample(self):
         truth = self.truth
         if truth is None:
@@ -120,9 +121,11 @@ class LocalizationError(Node):
                   f'lat {lat:+6.3f}  lon {lon:+6.3f} m  yaw {math.degrees(eyaw):+5.1f} deg  |  '
                   f'RMS lat {self.rms("lat"):.3f}  max lat {self.max_abs["lat"]:.3f} m', flush=True)
 
+    # Return the RMS of one error component over all samples.
     def rms(self, key):
         return math.sqrt(self.sum_sq[key] / self.samples) if self.samples else 0.0
 
+    # Print the RMS / max error summary of the run and close the CSV.
     def summary(self):
         if not self.samples:
             print('no samples (is the simulation running with ground_truth/odometry?)')
@@ -136,6 +139,7 @@ class LocalizationError(Node):
             self.csv.close()
 
 
+# Start the node, spin until Ctrl+C, then print the error summary.
 def main():
     rclpy.init()
     node = LocalizationError()

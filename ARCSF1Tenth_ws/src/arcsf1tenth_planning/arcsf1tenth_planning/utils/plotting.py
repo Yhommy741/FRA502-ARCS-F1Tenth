@@ -1,5 +1,3 @@
-"""Plot an occupancy map with a centerline and a raceline (shared by the planning scripts)."""
-
 import math
 import os
 
@@ -8,8 +6,8 @@ import numpy as np
 import yaml
 
 
+# Return (grayscale image, [x_min, x_max, y_min, y_max]) of a map_server map.
 def load_map_image(map_yaml):
-    """Return (grayscale image, [x_min, x_max, y_min, y_max]) of a map_server map."""
     with open(map_yaml) as f:
         meta = yaml.safe_load(f)
     image_path = os.path.join(os.path.dirname(os.path.abspath(map_yaml)), meta['image'])
@@ -22,12 +20,8 @@ def load_map_image(map_yaml):
     return image, [x0, x0 + width * res, y0, y0 + height * res]
 
 
+# Load the centerline (x, y) from a generate_raceline.py or original F1TENTH CSV.
 def load_centerline(path):
-    """Centerline points (x, y in the first two columns) from either format:
-
-    - generate_raceline.py:  s; x; y; psi; kappa; vx; ax   (semicolon, followable line)
-    - original F1TENTH:      x, y, w_tr_right, w_tr_left   (comma)
-    """
     with open(path) as f:
         first = next((line for line in f if line.strip() and not line.startswith('#')), '')
     if ';' in first:
@@ -35,16 +29,13 @@ def load_centerline(path):
     return np.loadtxt(path, delimiter=',', comments='#', ndmin=2)
 
 
+# Load the columns s, x, y, psi, kappa, vx, ax from a raceline CSV.
 def load_raceline(path):
-    """Columns s, x, y, psi, kappa, vx, ax from a raceline CSV (semicolon separated)."""
     return np.loadtxt(path, delimiter=';', comments='#', ndmin=2)
 
 
+# Plot the map, the dashed centerline and the raceline coloured by speed.
 def plot_track(image, extent, centerline=None, raceline=None, start=None, title=''):
-    """Figure with the map, the centerline (dashed) and the raceline coloured by speed.
-
-    centerline: Nx2+ array (x, y, ...); raceline: Nx7 array (s, x, y, psi, kappa, vx, ax).
-    """
     import matplotlib.pyplot as plt
 
     fig, axis = plt.subplots(figsize=(12, 9))

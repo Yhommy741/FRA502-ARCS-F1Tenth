@@ -1,34 +1,4 @@
 #!/usr/bin/python3
-"""non's planner: global path + kinodynamic RRT detours around lidar obstacles.
-
-    map   (map_server, latched) ─┐
-    scan  (lidar)               ─┤
-    TF    map -> base_footprint ─┼──► non_rrt_planner ──► rrt/trajectory  (Trajectory: what non_rrt_tracker follows)
-    odometry/estimated (speed)  ─┤                ──► rrt/path, rrt/tree, rrt/goal, rrt/obstacle_points (RViz)
-    global path CSV (launch)    ─┘                ──► rrt/state (GLOBAL | AVOID | BLOCKED) + rrt/state_marker
-
-Every cycle (rate):
-  1. obstacles: lidar points in the map frame that are further than detect_wall_margin from
-     every wall of the saved map (= not part of the map), isolated points dropped
-  2. blocked?  the car footprint, placed along the global path from the car up to
-     check_distance + speed * check_time ahead, hits an obstacle
-  3. mode
-       AVOID    a committed RRT path exists, the car is on it (< replan_distance) and it is still
-                obstacle-free: keep following it until the car reaches its end (back on the global path)
-       GLOBAL   no committed path and the global path is clear: follow the global path
-       plan     the global path (or the committed RRT path) is blocked: run the kinodynamic RRT
-                (kinodynamic_rrt.py) from where the car will be when planning is done to a goal on the
-                global path goal_after_obstacle past the obstacle
-                -> found: commit to it (AVOID)
-                -> none:  BLOCKED: brake to stop stop_distance before the blocked pose, along the
-                          committed RRT path if there is one (mid-maneuver), else along the global
-                          path; try again next cycle
-  4. speed on the RRT path: avoid_speed_max, capped by max_lateral_accel in its curvature and by
-     max_acceleration (speed up / brake)
-
-Committing to one RRT path (instead of a new random tree every cycle) keeps the car from zig-zagging
-between equally good random solutions.
-"""
 
 import math
 import sys
@@ -64,18 +34,23 @@ RRT_FIELDS = ('edge_length', 'integration_step', 'n_controls', 'goal_bias', 'goa
               'refine_iterations', 'time_budget')
 
 
+# Return the yaw angle of a quaternion.
 def yaw_of(q):
     return math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
 
 
+# Return the TF frame in the node's namespace (/arcsf1tenth + map -> arcsf1tenth/map, no namespace -> map).
 def namespaced_frame(node, name):
     namespace = node.get_namespace().strip('/')
     return f'{namespace}/{name}' if namespace else name
 
 
 class RRTPlanner(Node):
+    # Set up the node: vehicle, detection and RRT parameters, planner state, subscribers, publishers and timer.
     def __init__(self):
         super().__init__('non_rrt_planner')
+
+        # Parameters
         for name in VEHICLE:   # arcsf1tenth_description/config/vehicle.yaml
             self.declare_parameter(name, Parameter.Type.DOUBLE)
         try:
@@ -126,12 +101,13 @@ class RRTPlanner(Node):
         declare('publish_tree', True)
         self.p = lambda name: self.get_parameter(name).value
         p = self.p
-
         csv = p('global_path')
         if not csv:
             raise RuntimeError('no global_path: start it with non_controller.launch.py track:=<map_name>')
-        self.path = GlobalPath.from_csv(csv)
         self.map_frame, self.base_frame = p('map_frame'), p('base_frame')
+
+        # Variables
+        self.path = GlobalPath.from_csv(csv)
         v = self.vehicle
         self.checker = CollisionChecker(v['footprint_width'] / 2, v['footprint_front'], v['footprint_rear'],
                                         p('wall_margin'), p('obstacle_margin'))
@@ -140,7 +116,6 @@ class RRTPlanner(Node):
         self.rrt.max_steer = p('steer_margin') * v['max_steering_angle']
         self.rrt.steer_rate = p('steer_rate_margin') * v['max_steering_speed']
         self.rng = np.random.default_rng()
-
         self.scan = None
         self.speed = 0.0
         self.yaw_rate = 0.0
@@ -149,9 +124,8 @@ class RRTPlanner(Node):
         self.mode = None
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.create_subscription(OccupancyGrid, 'map', self.on_map, LATCHED)
-        self.create_subscription(LaserScan, 'scan', lambda m: setattr(self, 'scan', m), qos_profile_sensor_data)
-        self.create_subscription(Odometry, p('odom_topic'), self.on_odom, 10)
+
+        # Publishers
         self.traj_pub = self.create_publisher(Trajectory, 'rrt/trajectory', 10)
         self.path_pub = self.create_publisher(Path, 'rrt/path', 10)
         self.tree_pub = self.create_publisher(Marker, 'rrt/tree', 10)
@@ -159,19 +133,38 @@ class RRTPlanner(Node):
         self.obstacle_pub = self.create_publisher(Marker, 'rrt/obstacle_points', 10)
         self.state_pub = self.create_publisher(String, 'rrt/state', LATCHED)
         self.state_marker_pub = self.create_publisher(Marker, 'rrt/state_marker', 10)
+
+        # Subscribers
+        self.create_subscription(OccupancyGrid, 'map', self.on_map, LATCHED)
+        self.create_subscription(LaserScan, 'scan', lambda m: setattr(self, 'scan', m), qos_profile_sensor_data)
+        self.create_subscription(Odometry, p('odom_topic'), self.on_odom, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(1.0 / p('rate'), self.step)
+
+        # On Start
         self.get_logger().info(f'global path {csv} ({self.path.length:.1f} m), waiting for the map')
 
-    # ------------------------------------------------------------------ inputs
+    # Load the map walls into the collision checker.
     def on_map(self, msg):
         grid = np.asarray(msg.data, dtype=np.int16).reshape(msg.info.height, msg.info.width)
         self.checker.set_map(grid, msg.info.resolution, msg.info.origin.position.x, msg.info.origin.position.y)
         self.get_logger().info(f'map {msg.info.width} x {msg.info.height}: wall distance ready')
 
+    # Store the latest speed and yaw rate.
     def on_odom(self, msg):
         self.speed = msg.twist.twist.linear.x
         self.yaw_rate = msg.twist.twist.angular.z
 
+    # Return the car pose (x, y, yaw) in the map frame from TF, or None if missing or stale.
     def car_pose(self):
         try:
             t = self.tf_buffer.lookup_transform(self.map_frame, self.base_frame, Time())
@@ -182,8 +175,8 @@ class RRTPlanner(Node):
             return None    # localization stopped: do not plan on a stale pose
         return t.transform.translation.x, t.transform.translation.y, yaw_of(t.transform.rotation)
 
+    # Give the collision checker the lidar points that the map does not explain (the obstacles).
     def detect_obstacles(self, now):
-        """Lidar points not explained by the map -> checker obstacles."""
         scan = self.scan
         if scan is None or (now - Time.from_msg(scan.header.stamp)).nanoseconds * 1e-9 > self.p('obstacle_timeout'):
             self.checker.set_obstacles([])
@@ -218,7 +211,7 @@ class RRTPlanner(Node):
             pts = pts[counts > self.p('min_neighbors')]      # count includes the point itself
         self.checker.set_obstacles(pts)
 
-    # -------------------------------------------------------------------- step
+    # One planning cycle: detect obstacles, choose GLOBAL / AVOID / BLOCKED, replan if needed, and publish.
     def step(self):
         now = self.get_clock().now()
         if not self.checker.ready:
@@ -270,16 +263,16 @@ class RRTPlanner(Node):
         self.set_mode(mode)
         self.publish_markers(stamp, x, y, tree)
 
+    # Return the number of path points from the car to the first global path pose hitting an obstacle, or None.
     def first_blocked(self, i, v):
-        """Number of path points from the car to the first global path pose hitting an obstacle, or None."""
         path = self.path
         reach = self.p('check_distance') + v * self.p('check_time')
         idx = path.window(i, 0.0, reach)
         free = self.checker.obstacle_free(path.x[idx], path.y[idx], path.psi[idx])
         return None if free.all() else int(np.argmin(free))
 
+    # Check the committed RRT path: return ('ok' | 'off' | 'done' | 'blocked', index of its first blocked pose or None).
     def check_plan(self, x, y):
-        """Committed RRT path: ('ok' | 'off' | 'done' | 'blocked', index of its first blocked pose or None)."""
         pl = self.plan
         dist = np.hypot(pl['x'] - x, pl['y'] - y)
         j = int(np.argmin(dist))
@@ -298,7 +291,7 @@ class RRTPlanner(Node):
             return 'blocked', j + int(np.argmin(free))
         return 'ok', None
 
-    # ------------------------------------------------------------------- RRT
+    # Run the kinodynamic RRT from the predicted car pose to a clear goal on the global path past the obstacle.
     def replan(self, x, y, yaw, v, i, blocked):
         p, path, rrt = self.p, self.path, self.rrt
         rrt.speed = min(max(v, p('min_plan_speed')), p('avoid_speed_max'))
@@ -336,6 +329,7 @@ class RRTPlanner(Node):
         k_end = k + path.count(1.0)
         width = p('sample_width')
 
+        # Sample a random point near the global path between the car and the goal.
         def sample(rng):
             j = (i + int(rng.integers(0, k_end))) % path.n
             return path.offset_point(j, rng.uniform(-width, width))
@@ -387,9 +381,8 @@ class RRTPlanner(Node):
                          end=len(px) - 1 + len(result.x) - 1, j=0, margin=margin)
         return result
 
-    # ---------------------------------------------------------------- output
+    # Build the committed RRT path from the car on; with stop_at (a blocked pose index), brake to a stop before it.
     def plan_msg(self, stamp, stop_at=None):
-        """Committed RRT path from the car on; stop_at = index of a blocked pose: brake to a stop before it."""
         pl = self.plan
         v = pl['v']
         if stop_at is not None:
@@ -405,8 +398,8 @@ class RRTPlanner(Node):
                                        v=float(v[k])))
         return msg
 
+    # Build the global path window around the car; with blocked (points to the blocked pose), brake to a stop before it.
     def global_msg(self, i, stamp, blocked):
-        """Global path window around the car; blocked = points to the blocked pose: brake to a stop before it."""
         path = self.path
         behind = path.count(self.p('global_behind'))
         idx = path.window(i, self.p('global_behind'), self.p('global_ahead'))
@@ -422,12 +415,14 @@ class RRTPlanner(Node):
                                        psi=float(path.psi[j]), kappa=float(path.kappa[j]), v=float(v[k])))
         return msg
 
+    # Change the mode, log the transition, and publish the new state.
     def set_mode(self, mode):
         if mode != self.mode:
             self.get_logger().info(f'{self.mode} -> {mode}')
             self.mode = mode
             self.state_pub.publish(String(data=mode))
 
+    # Publish a trajectory as an RViz path.
     def publish_path(self, msg):
         path = Path()
         path.header = msg.header
@@ -439,6 +434,7 @@ class RRTPlanner(Node):
             path.poses.append(pose)
         self.path_pub.publish(path)
 
+    # Create an empty RViz marker in the map frame with the given type, colour and scale.
     def marker(self, stamp, ns, kind, color, scale):
         m = Marker()
         m.header.frame_id, m.header.stamp = self.map_frame, stamp
@@ -449,6 +445,7 @@ class RRTPlanner(Node):
         m.color.a = 1.0
         return m
 
+    # Publish the RViz markers: obstacle points, RRT tree, goal and state text.
     def publish_markers(self, stamp, x, y, tree):
         pts = self.checker.points
         m = self.marker(stamp, 'rrt_obstacles', Marker.POINTS, (1.0, 0.0, 1.0), 0.08)
@@ -475,6 +472,7 @@ class RRTPlanner(Node):
         self.state_marker_pub.publish(m)
 
 
+# Start the node and spin until Ctrl+C.
 def main():
     rclpy.init()
     try:

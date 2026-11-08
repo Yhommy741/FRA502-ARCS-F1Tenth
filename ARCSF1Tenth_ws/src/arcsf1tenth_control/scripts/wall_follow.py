@@ -15,27 +15,11 @@ VEHICLE_PARAMS = ('max_steering_angle', 'max_speed')
 
 
 class WallFollow(Node):
-    """PID wall follower: scan -> drive.
-
-    Keeps a fixed distance to the left or right wall using two lidar beams
-    (F1TENTH wall-following method):
-
-        b = range at 90 deg (perpendicular to the car)
-        a = range at 90 deg - theta (toward the front)
-        alpha = atan((a cos(theta) - b) / (a sin(theta)))   car heading vs wall
-        D     = b cos(alpha)                                distance to the wall now
-        D_ahead = D + lookahead * sin(alpha)                distance after driving 'lookahead' m
-
-    error = D_ahead - desired_distance (> 0: too far from the wall) goes
-    through a PID to get the steering angle. Speed drops with the steering
-    angle and with the free distance in front of the car.
-
-    Lidar angle 0 = forward, +90 deg = left (lidar frame aligned with base_link).
-    """
-
+    # Set up the node: vehicle and PID parameters, PID state, drive publisher and scan subscriber.
     def __init__(self):
         super().__init__('wall_follow')
 
+        # Parameters
         # Vehicle limits: no defaults, must come from arcsf1tenth_description/config/vehicle.yaml
         for name in VEHICLE_PARAMS:
             self.declare_parameter(name, Parameter.Type.DOUBLE)
@@ -87,17 +71,33 @@ class WallFollow(Node):
         self.front_half_angle = self.get_parameter('front_half_angle').value
         self.max_steer = self.get_parameter('max_steering_angle').value
 
-        self.drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
-        self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
-
+        # Variables
         self.prev_error = None
         self.prev_time = None
         self.integral = 0.0
 
+        # Publishers
+        self.drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
+
+        # Subscribers
+        self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
         self.get_logger().info(
             f'Following the {side} wall at {self.desired:.2f} m (speed {self.speed_min:.1f}-{self.speed_max:.1f} m/s)'
         )
 
+    # Measure the distance to the wall from two beams, run the PID, and publish steering and speed.
     def scan_callback(self, scan):
         beam_b = self.side * math.pi / 2.0                  # perpendicular to the car
         beam_a = self.side * (math.pi / 2.0 - self.theta)   # toward the front
@@ -129,8 +129,8 @@ class WallFollow(Node):
 
         self.publish(self.speed_for(steering, front_distance(scan, self.front_half_angle)), steering)
 
+    # Return the speed: slower in turns and when the free distance ahead gets short.
     def speed_for(self, steering, front):
-        """Slow down in turns and when the free distance ahead gets short."""
         if front is not None and front < self.front_stop:
             return 0.0
         turn = 1.0 - abs(steering) / self.max_steer   # 1 straight, 0 full lock
@@ -140,11 +140,13 @@ class WallFollow(Node):
             speed = min(speed, self.speed_min + (self.speed_max - self.speed_min) * ratio)
         return speed
 
+    # Clear the PID error history and integral.
     def reset_pid(self):
         self.prev_error = None
         self.prev_time = None
         self.integral = 0.0
 
+    # Publish a drive command with the given speed and steering angle.
     def publish(self, speed, steering):
         msg = AckermannDriveStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -153,12 +155,13 @@ class WallFollow(Node):
         msg.drive.steering_angle = steering
         self.drive_pub.publish(msg)
 
+    # Publish a stop command (speed 0, steering straight).
     def stop(self):
         self.publish(0.0, 0.0)
 
 
+# Return the finite ranges inside [range_min, range_max] for the beams between two angles.
 def valid_ranges(scan, angle_low, angle_high):
-    """Finite ranges inside [range_min, range_max] for beams between two angles."""
     first = max(0, math.ceil((angle_low - scan.angle_min) / scan.angle_increment))
     last = min(len(scan.ranges) - 1, math.floor((angle_high - scan.angle_min) / scan.angle_increment))
     return [
@@ -167,22 +170,24 @@ def valid_ranges(scan, angle_low, angle_high):
     ]
 
 
+# Return the median range around one beam angle (robust to noise and dropouts), or None if no return.
 def beam_range(scan, angle, window):
-    """Median range around one beam angle (robust to noise and single dropouts), None if no return."""
     ranges = sorted(valid_ranges(scan, angle - window, angle + window))
     return ranges[len(ranges) // 2] if ranges else None
 
 
+# Return the closest return in the cone ahead of the car, or None if nothing is in range.
 def front_distance(scan, half_angle):
-    """Closest return in the cone ahead of the car, None if nothing in range."""
     ranges = valid_ranges(scan, -half_angle, half_angle)
     return min(ranges) if ranges else None
 
 
+# Limit a value to the range [low, high].
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+# Start the node, spin until Ctrl+C, and leave the car stopped.
 def main(args=None):
     rclpy.init(args=args)
     try:

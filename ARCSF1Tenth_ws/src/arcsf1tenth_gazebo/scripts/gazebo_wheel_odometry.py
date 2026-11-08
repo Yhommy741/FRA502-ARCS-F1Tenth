@@ -18,28 +18,18 @@ from tf2_ros import TransformBroadcaster
 VEHICLE_PARAMS = ('wheelbase', 'wheel_radius', 'max_steering_angle', 'max_steering_speed')
 
 
+# Return the TF frame in the node's namespace (/arcsf1tenth + imu -> arcsf1tenth/imu, no namespace -> imu).
 def namespaced_frame(node, name):
-    """TF frame in the node's namespace: /arcsf1tenth + imu -> arcsf1tenth/imu (no namespace -> imu)."""
     namespace = node.get_namespace().strip('/')
     return f'{namespace}/{name}' if namespace else name
 
 
 class GazeboWheelOdometry(Node):
-    """Wheel odometry from the simulated drive, like vesc_to_odom on the real car.
-
-    - speed: rear wheel joint velocities (the VESC measures motor speed)
-    - yaw rate: bicycle model v * tan(steering) / wheelbase, using the steering
-      *command* through the servo slew-rate limit (a servo has no angle feedback)
-    - pose: dead reckoning of the above
-
-    Publishes nav_msgs/Odometry on odometry/wheel (odom -> base_footprint).
-    Publishes the odom -> base_footprint TF only when publish_tf is true (no EKF
-    running); otherwise the EKF fuses this with the IMU and owns the TF.
-    """
-
+    # Set up the node: vehicle parameters, odometry state, odometry/TF publishers and the drive/joint subscribers.
     def __init__(self):
         super().__init__('gazebo_wheel_odometry')
 
+        # Parameters
         # Vehicle geometry: must come from arcsf1tenth_description/config/vehicle.yaml
         for name in VEHICLE_PARAMS:
             self.declare_parameter(name, Parameter.Type.DOUBLE)
@@ -76,19 +66,37 @@ class GazeboWheelOdometry(Node):
         self.speed_var = p('speed_std') ** 2
         self.yaw_rate_var = p('yaw_rate_std') ** 2
 
+        # Variables
         self.cmd_steer = 0.0
         self.steer = 0.0
         self.x = self.y = self.yaw = 0.0
         self.last_stamp = None
 
+        # Publishers
         self.odom_pub = self.create_publisher(Odometry, 'odometry/wheel', 10)
         self.tf_broadcaster = TransformBroadcaster(self) if self.publish_tf else None
+
+        # Subscribers
         self.create_subscription(AckermannDriveStamped, 'drive', self.drive_callback, 10)
         self.create_subscription(JointState, 'joint_states', self.joint_states_callback, 10)
 
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
+
+    # Store the latest steering command, clamped to the steering limit.
     def drive_callback(self, msg):
         self.cmd_steer = clamp(msg.drive.steering_angle, -self.max_steer, self.max_steer)
 
+    # Integrate the rear wheel speeds and steering into a pose, then publish odometry (and TF).
     def joint_states_callback(self, msg):
         try:
             rl = msg.velocity[msg.name.index('RL_wheel_joint')]
@@ -144,10 +152,12 @@ class GazeboWheelOdometry(Node):
             self.tf_broadcaster.sendTransform(t)
 
 
+# Limit a value to the range [low, high].
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+# Start the node and spin until Ctrl+C.
 def main(args=None):
     rclpy.init(args=args)
     try:

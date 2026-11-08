@@ -1,62 +1,16 @@
-# robot_localization EKF (ekf_node, 15-state, general model): wheel odometry + IMU gyro yaw rate.
-#
-# Architecture:
-#   odometry/wheel (50 Hz, wheel vx, vy = 0) ────────────────────────┐
-#                                                                    ├──► ekf ──► odometry/estimated (50 Hz)
-#   imu ──► imu_filter (bias + ZUPT) ──► imu/filtered (gyro Z) ─────┘      ──► TF odom → base_footprint (50 Hz)
-#                                                                              │
-#                                                                              ▼
-#                                                            Cartographer (slam:=mapping/localization)
-#                                                            uses this as odometry, /scan @ 10 Hz
-#                                                            scan-matches ──► TF map → odom (corrects drift)
-#
-# State (robot_localization, order of the 15×15 matrices below):
-#   [ x  y  z  roll  pitch  yaw  vx  vy  vz  vroll  vpitch  vyaw  ax  ay  az ]
-#   two_d_mode: z, roll, pitch and their rates are held at 0 → effectively planar.
-#
-# Model (robot_localization's general model, as used by ForzaETH):
-#   predict:  omnidirectional constant velocity/acceleration kinematics (no steering / wheelbase)
-#   wheel:    vx (speed), vy = 0 (no sideways slide at the rear axle = base_footprint)
-#   gyro:     vyaw (rotation)
-#   Optional bicycle-model yaw rate: set odom0_config slot vyaw (index 11) to true.
-#
-# Gyro bias: robot_localization has no bias state. imu_filter removes it before the EKF
-# (startup calibration + ZUPT at every standstill, config/imu_filter.yaml), so keep the
-# car still for ~3 s after launch. BNO055 zero-rate offset ±1 °/s (sensors.yaml).
-#
-# Measurement noise comes from the input messages' covariance fields:
-#   imu/filtered         gyro variance measured at calibration (imu_filter)
-#   odometry/wheel       vx/vyaw variance 0.0025, vy 1e-6 (set by gazebo_wheel_odometry)
-#
-# Frames (map/odom/base_link/world) are set by the launch file from the namespace.
-#
-# Tuning rules:
-#   - Larger process noise = state follows the sensors faster (less lag, more noise).
-#   - Edit → colcon build --packages-select arcsf1tenth_localization (or --symlink-install once).
-#
-# IMPORTANT: every matrix entry must be a float (0.0 not 0) — ROS 2's strict YAML
-# parser rejects sequences that mix int and float.
-
-/**/ekf:                          # any namespace
+/**/ekf:
   ros__parameters:
-    # ---- timing ----
-    frequency: 50.0               # [Hz] predict + publish
+    # Timing
+    frequency: 50.0               # [Hz]
     sensor_timeout: 0.2           # [s]
     two_d_mode: true
-    publish_tf: true              # odom → base_footprint
+    publish_tf: true
     publish_acceleration: false
-    transform_time_offset: 0.0
-    transform_timeout: 0.0
+    transform_time_offset: 0.0    # [s]
+    transform_timeout: 0.0        # [s]
     print_diagnostics: false
 
-    # 15-slot config masks:
-    #   [ x  y  z     roll  pitch  yaw
-    #     vx vy vz    vroll vpitch vyaw
-    #     ax ay az ]
-
-    # ---- wheel odometry (sim: gazebo_wheel_odometry, real: VESC) ----
-    # vx + vy (= 0) only. vyaw (bicycle model v·tan(δ)/L) is off: the gyro measures the
-    # real rotation, the bicycle model is wrong when the tyres slip or the servo lags.
+    # Wheel odometry
     odom0: odometry/wheel
     odom0_config: [false, false, false,
                    false, false, false,
@@ -65,14 +19,9 @@
                    false, false, false]
     odom0_differential: false
     odom0_relative: false
-    odom0_queue_size: 10
+    odom0_queue_size: 10          # [const]
 
-    # ---- IMU (BNO055) ----
-    # Yaw RATE (gyro Z) ONLY.
-    #   - absolute yaw: BNO055 fused yaw drifts in IMU mode, and in Gazebo it is exact
-    #     (would be cheating) → not used.
-    #   - accel: integrating twice = position drift/jitter → not used.
-    # The launch argument use_imu:=false switches this input off.
+    # IMU
     imu0: imu/filtered
     imu0_config: [false, false, false,
                   false, false, false,
@@ -81,11 +30,10 @@
                   false, false, false]
     imu0_differential: false
     imu0_relative: false
-    imu0_queue_size: 20
+    imu0_queue_size: 20           # [const]
     imu0_remove_gravitational_acceleration: false
 
-    # ---- process noise (model uncertainty per second), 15×15 diagonal ----
-    # robot_localization's default values.
+    # Process noise
     process_noise_covariance: [
       0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
@@ -104,8 +52,8 @@
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015
     ]
 
-    # ---- initial estimate covariance (how unsure we are at t=0) ----
-    # We start at the odom origin with no motion by definition → ~0.
+
+    # Initial estimate covariance
     initial_estimate_covariance: [
       1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
       0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
@@ -123,3 +71,4 @@
       0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-9, 0.0,
       0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-9
     ]
+

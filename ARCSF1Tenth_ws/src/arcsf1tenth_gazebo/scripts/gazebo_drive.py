@@ -18,18 +18,11 @@ VEHICLE_PARAMS = (
 
 
 class GazeboDrive(Node):
-    """Convert /drive (steering angle + speed) into Gazebo joint commands.
-
-    Simulation counterpart of the real car's drive hardware (servo + VESC):
-    steering is sent as a joint position (like a servo), speed as rear-wheel
-    velocity (like a motor with speed PID), with an acceleration limit. Uses
-    Ackermann geometry so the inner wheel steers more and the rear wheels spin
-    at different speeds in a turn.
-    """
-
+    # Set up the node: vehicle parameters, joint command publishers, /drive subscriber and 50 Hz timer.
     def __init__(self):
         super().__init__('gazebo_drive')
 
+        # Parameters
         # Vehicle geometry: no defaults, must come from arcsf1tenth_description/config/vehicle.yaml
         for name in VEHICLE_PARAMS:
             self.declare_parameter(name, Parameter.Type.DOUBLE)
@@ -60,27 +53,43 @@ class GazeboDrive(Node):
         self.cmd_timeout = self.get_parameter('cmd_timeout').value
         self.wheel_direction = self.get_parameter('wheel_direction').value
 
-        self.steer_left_pub = self.create_publisher(Float64, 'steer_left_cmd', 10)
-        self.steer_right_pub = self.create_publisher(Float64, 'steer_right_cmd', 10)
-        self.wheel_rl_pub = self.create_publisher(Float64, 'wheel_rl_cmd', 10)
-        self.wheel_rr_pub = self.create_publisher(Float64, 'wheel_rr_cmd', 10)
-
-        self.create_subscription(AckermannDriveStamped, 'drive', self.drive_callback, 10)
-
+        # Variables
         self.steering_angle = 0.0
         self.speed = 0.0
         self.wheel_speed_cmd = 0.0  # speed actually sent to the wheels (acceleration limited)
         self.last_cmd_time = None
         self.timed_out = True
 
+        # Publishers
+        self.steer_left_pub = self.create_publisher(Float64, 'steer_left_cmd', 10)
+        self.steer_right_pub = self.create_publisher(Float64, 'steer_right_cmd', 10)
+        self.wheel_rl_pub = self.create_publisher(Float64, 'wheel_rl_cmd', 10)
+        self.wheel_rr_pub = self.create_publisher(Float64, 'wheel_rr_cmd', 10)
+
+        # Subscribers
+        self.create_subscription(AckermannDriveStamped, 'drive', self.drive_callback, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(0.02, self.timer_callback)  # 50 Hz
+
+        # On Start
         self.get_logger().info('Listening on /drive')
 
+    # Store the latest /drive command, clamped to the vehicle limits.
     def drive_callback(self, msg):
         self.steering_angle = clamp(msg.drive.steering_angle, -self.max_steer, self.max_steer)
         self.speed = clamp(msg.drive.speed, -self.max_speed, self.max_speed)
         self.last_cmd_time = self.get_clock().now()
 
+    # Send the steering and acceleration-limited wheel speeds to Gazebo, stopping if /drive goes silent.
     def timer_callback(self):
         # Watchdog: stop the wheels (keep steering) if commands stop arriving
         now = self.get_clock().now()
@@ -105,8 +114,8 @@ class GazeboDrive(Node):
         self.wheel_rl_pub.publish(Float64(data=self.wheel_direction * v_left / self.wheel_radius))
         self.wheel_rr_pub.publish(Float64(data=self.wheel_direction * v_right / self.wheel_radius))
 
+    # Split one steering angle and speed into (left steer, right steer, left rear speed, right rear speed).
     def ackermann(self, steering_angle, speed):
-        """Return (left steer, right steer, left rear speed, right rear speed)."""
         if abs(steering_angle) < 1e-4:
             return steering_angle, steering_angle, speed, speed
 
@@ -122,10 +131,12 @@ class GazeboDrive(Node):
         return steer_left, steer_right, v_left, v_right
 
 
+# Limit a value to the range [low, high].
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+# Start the node and spin until Ctrl+C.
 def main(args=None):
     rclpy.init(args=args)
     try:

@@ -1,21 +1,4 @@
 #!/usr/bin/python3
-"""Save the Cartographer map of a track in one command (run while slam:=mapping is running).
-
-  ros2 run arcsf1tenth_localization save_map.py austin
-
-  - sim or real is detected automatically: Gazebo running (/clock) -> maps/sim/, else maps/real/
-  - always (over)writes <track>/maps/<sim|real>/cartographer_map.{pgm,yaml}
-  - namespace: arcsf1tenth (other: --ros-args -r __ns:=/<ns>)
-
-Steps:
-  1. finish the active mapping trajectory (final optimization, loop closure)
-  2. cartographer_map.pgm + .yaml         map image from the map topic, used by AMCL
-                                          (slam:=localization) and generate_raceline.py
-  3. copy into install/ as well, so no colcon build is needed before localization
-Cartographer is only used for mapping, so its state (.pbstream) is not saved.
-Files are written to the SOURCE tree (src/arcsf1tenth_tracks), so they are kept in git.
-Raceline afterwards:  ros2 run arcsf1tenth_planning generate_raceline.py <track>
-"""
 
 import argparse
 import glob
@@ -42,13 +25,14 @@ FREE_THRESH = 0.25
 YAML_FREE_THRESH = 0.196
 
 
+# Print an error message and exit with status 1.
 def fail(message):
     print(f'save_map: {message}', file=sys.stderr)
     sys.exit(1)
 
 
+# Return (source track folder, installed track folder or None) for a track name.
 def track_dirs(track):
-    """(source track folder, installed track folder or None)."""
     try:
         prefix = get_package_prefix('arcsf1tenth_tracks')
     except PackageNotFoundError:
@@ -66,22 +50,45 @@ def track_dirs(track):
 
 
 class Saver(Node):
+    # Set up the node: map subscriber and the Cartographer trajectory service clients.
     def __init__(self):
         super().__init__('save_map', namespace='arcsf1tenth')
+
+        # Parameters
+
+        # Variables
         ns = self.get_namespace().rstrip('/')
-        self.get_states = self.create_client(GetTrajectoryStates, f'{ns}/get_trajectory_states')
-        self.finish = self.create_client(FinishTrajectory, f'{ns}/finish_trajectory')
         self.map_msg = None
         self.map_time = None
+        self.map_topic = f'{ns}/map'
+
+        # Publishers
+
+        # Subscribers
         qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                          reliability=ReliabilityPolicy.RELIABLE)
         self.create_subscription(OccupancyGrid, f'{ns}/map', self.on_map, qos)
-        self.map_topic = f'{ns}/map'
 
+        # Service Servers
+
+        # Service Clients
+        self.get_states = self.create_client(GetTrajectoryStates, f'{ns}/get_trajectory_states')
+        self.finish = self.create_client(FinishTrajectory, f'{ns}/finish_trajectory')
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
+
+        # On Start
+
+    # Store the latest map and the time it arrived.
     def on_map(self, msg):
         self.map_msg = msg
         self.map_time = time.time()
 
+    # Call a service and wait for its response, exiting if it is unavailable or does not answer.
     def call(self, client, request, timeout=30.0):
         if not client.wait_for_service(timeout_sec=5.0):
             fail(f'service {client.srv_name} not available: is slam:=mapping running (same namespace)?')
@@ -91,8 +98,8 @@ class Saver(Node):
             fail(f'no answer from {client.srv_name}')
         return future.result()
 
+    # Wait for a map message received after `after` (the map is re-published ~1 Hz).
     def wait_for_map(self, after, timeout=15.0):
-        """Wait for a map message received after `after` (the map is re-published ~1 Hz)."""
         end = time.time() + timeout
         while time.time() < end:
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -100,8 +107,8 @@ class Saver(Node):
                 return self.map_msg
         fail(f'no map received on {self.map_topic}')
 
+    # Return True in simulation, detected by a /clock publisher (Gazebo has one, the real car does not).
     def is_simulation(self):
-        """Gazebo publishes /clock; the real car does not."""
         end = time.time() + 2.0
         while time.time() < end:
             if self.count_publishers('/clock') > 0:
@@ -110,8 +117,8 @@ class Saver(Node):
         return False
 
 
+# Write an OccupancyGrid to <stem>.pgm + <stem>.yaml, like nav2 map_saver in trinary mode.
 def write_map_image(grid, stem):
-    """OccupancyGrid -> <stem>.pgm + <stem>.yaml, like nav2 map_saver in trinary mode."""
     width, height = grid.info.width, grid.info.height
     data = np.asarray(grid.data, dtype=np.int16).reshape(height, width)[::-1]  # image row 0 = top
     pixels = np.full(data.shape, 205, dtype=np.uint8)                          # unknown
@@ -135,6 +142,7 @@ def write_map_image(grid, stem):
     return width, height
 
 
+# Finish the mapping trajectory, save the map image, and copy it into install/.
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('track', help='track folder name in arcsf1tenth_tracks (e.g. austin)')

@@ -1,15 +1,4 @@
 #!/usr/bin/python3
-"""Frenet frame of the global path: publishes the car's Frenet state and the global trajectory.
-
-    global path CSV (centerline / raceline) ─┐
-    map (map_server, for the track widths) ──┼──► frenet_node ──► global_trajectory   (latched, closed, with track widths)
-    TF map -> base_footprint ────────────────┤                ──► global_path         (nav_msgs/Path for RViz)
-    odometry/estimated (speed) ──────────────┘                ──► frenet/state        (s, d, s_dot, d_dot, yaw error)
-                                                              ──► track_bounds        (RViz markers: left/right walls)
-
-Shared by every planner/controller (yhom_*, non_*). Needs localization on the saved map
-(slam:=localization): the path and the map are in the map frame.
-"""
 
 import math
 import sys
@@ -28,15 +17,18 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from arcsf1tenth_planning.conversions import global_path_to_msg, namespaced_frame, trajectory_to_path
-from arcsf1tenth_planning.frenet import FrenetPath, load_path_csv, wrap_angle
+from arcsf1tenth_planning.utils.conversions import global_path_to_msg, namespaced_frame, trajectory_to_path
+from arcsf1tenth_planning.frenet.frenet_path import FrenetPath, load_path_csv, wrap_angle
 
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 
 class FrenetNode(Node):
+    # Set up the node: load the global path, create the publishers, subscribers and Frenet state timer.
     def __init__(self):
         super().__init__('frenet')
+
+        # Parameters
         self.declare_parameter('global_path', '')                   # CSV (generate_raceline.py format)
         self.declare_parameter('path_frame', namespaced_frame(self, 'map'))
         self.declare_parameter('base_frame', namespaced_frame(self, 'base_footprint'))
@@ -49,31 +41,48 @@ class FrenetNode(Node):
         self.base_frame = p('base_frame')
         self.window = p('search_window')
         self.max_width = p('max_width')
-
         csv = p('global_path')
         if not csv:
             raise RuntimeError('set -p global_path:=<centerline or raceline CSV>')
+        half = p('default_half_width')
+
+        # Variables
         data = load_path_csv(csv)
         self.path = FrenetPath(data['x'], data['y'], data['v'])
-        half = p('default_half_width')
         self.path.d_left[:] = half
         self.path.d_right[:] = half
         self.index = None
         self.speed = 0.0
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
+        # Publishers
         self.traj_pub = self.create_publisher(Trajectory, 'global_trajectory', LATCHED)
         self.path_pub = self.create_publisher(Path, 'global_path', LATCHED)
         self.bounds_pub = self.create_publisher(MarkerArray, 'track_bounds', LATCHED)
         self.state_pub = self.create_publisher(FrenetState, 'frenet/state', 10)
+
+        # Subscribers
         self.create_subscription(OccupancyGrid, 'map', self.on_map, LATCHED)
         self.create_subscription(Odometry, 'odometry/estimated', self.on_odom, 10)
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.publish_global()
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(1.0 / p('rate'), self.step)
+
+        # On Start
+        self.publish_global()
         self.get_logger().info(f'global path {csv}: {len(self.path.s)} points, {self.path.length:.1f} m '
                                f'(track widths {half} m until the map arrives)')
 
+    # Measure the track widths from the map and republish the global path with them.
     def on_map(self, msg):
         grid = np.asarray(msg.data, dtype=np.int16).reshape(msg.info.height, msg.info.width)
         o = msg.info.origin.position
@@ -82,15 +91,18 @@ class FrenetNode(Node):
                                f'right {np.min(right):.2f}-{np.max(right):.2f} m')
         self.publish_global()
 
+    # Store the latest estimated speed.
     def on_odom(self, msg):
         self.speed = msg.twist.twist.linear.x
 
+    # Publish the global trajectory, its RViz path and the track bound markers.
     def publish_global(self):
         msg = global_path_to_msg(self.path, self.frame, self.get_clock().now().to_msg())
         self.traj_pub.publish(msg)
         self.path_pub.publish(trajectory_to_path(msg))
         self.bounds_pub.publish(self.bound_markers())
 
+    # Build the left/right track wall line markers for RViz.
     def bound_markers(self):
         markers = MarkerArray()
         psi = self.path.psi_point()
@@ -108,6 +120,7 @@ class FrenetNode(Node):
             markers.markers.append(m)
         return markers
 
+    # Project the car pose (from TF) onto the global path and publish its Frenet state.
     def step(self):
         try:
             t = self.tf_buffer.lookup_transform(self.frame, self.base_frame, Time())
@@ -137,6 +150,7 @@ class FrenetNode(Node):
         self.state_pub.publish(msg)
 
 
+# Start the node and spin until Ctrl+C.
 def main():
     rclpy.init()
     try:

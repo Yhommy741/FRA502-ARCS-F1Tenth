@@ -1,31 +1,4 @@
 #!/usr/bin/python3
-"""non's path tracker: rrt/trajectory -> drive.
-
-    rrt/trajectory (non_rrt_planner) ─┐
-    TF map -> base_footprint     ─┴──► non_rrt_tracker ──► drive (AckermannDriveStamped)
-                                                   ──► non_rrt_tracker/lookahead (RViz)
-
-Each cycle:
-  1. car pose (rear axle) from TF, nearest trajectory point: lateral error e (+ = car left of the
-     path), heading error e_psi = yaw - psi_ref, path curvature kappa_ref
-  2. steering, controller:
-       rear_wheel_feedback (default; Paden et al. 2016, "rear wheel position based feedback"):
-           kappa_cmd = kappa_ref cos(e_psi) / (1 - kappa_ref e) - k_e e sin(e_psi)/e_psi - k_psi e_psi
-           delta = atan(wheelbase * kappa_cmd)
-         Uses the path curvature as feedforward: the kinodynamic RRT path is drivable by
-         construction, so the car follows it closely instead of cutting its tight corners.
-         kappa_ref is read preview_time * v ahead (steering servo lag).
-         Error dynamics per metre: e'' + k_psi e' + k_e e = 0, critically damped with settle
-         distance l = max(settle_distance_min, v * settle_time): k_psi = 2 / l, k_e = 1 / l^2.
-         (Fixed per-metre gains would be too aggressive at speed for the rate-limited steering:
-         the same idea as pure pursuit's speed-dependent lookahead.)
-       pure_pursuit: goal point Ld = clamp(lookahead_min + lookahead_gain * v) ahead,
-           delta = atan(wheelbase * 2 y_goal / dist^2)   (cuts corners; for comparison)
-  3. speed     trajectory v at the nearest point * speed_scale, changed at most max_acceleration;
-               v = 0 at that point = stop (the planner's braking profile)
-Stops (speed 0) on: no trajectory / empty trajectory / older than trajectory_timeout / no pose /
-further than max_tracking_error from the trajectory.
-"""
 
 import math
 import sys
@@ -46,18 +19,23 @@ from visualization_msgs.msg import Marker
 VEHICLE = ('wheelbase', 'max_steering_angle', 'max_speed', 'max_acceleration')
 
 
+# Return the TF frame in the node's namespace (/arcsf1tenth + map -> arcsf1tenth/map, no namespace -> map).
 def namespaced_frame(node, name):
     namespace = node.get_namespace().strip('/')
     return f'{namespace}/{name}' if namespace else name
 
 
+# Limit a value to the range [low, high].
 def clamp(value, low, high):
     return max(low, min(high, value))
 
 
 class RRTTracker(Node):
+    # Set up the node: vehicle and tracker parameters, tracking state, publishers, subscriber and control timer.
     def __init__(self):
         super().__init__('non_rrt_tracker')
+
+        # Parameters
         for name in VEHICLE:
             self.declare_parameter(name, Parameter.Type.DOUBLE)
         try:
@@ -87,17 +65,35 @@ class RRTTracker(Node):
         if self.controller not in ('rear_wheel_feedback', 'pure_pursuit'):
             raise RuntimeError(f"controller must be rear_wheel_feedback or pure_pursuit, got '{self.controller}'")
 
+        # Variables
         self.traj = None              # dict: xy (N, 2), psi, kappa, v, s (N,), frame
         self.traj_time = None
         self.speed_cmd = 0.0
         self.status = None
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        # Publishers
         self.drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
         self.goal_pub = self.create_publisher(Marker, '~/lookahead', 10)
+
+        # Subscribers
         self.create_subscription(Trajectory, p('trajectory_topic'), self.on_trajectory, 10)
+
+        # Service Servers
+
+        # Service Clients
+
+        # Action Servers
+
+        # Action Clients
+
+        # Timers
         self.create_timer(self.dt, self.step)
 
+        # On Start
+
+    # Store a new trajectory with its arc length (fewer than 2 points means stop).
     def on_trajectory(self, msg):
         self.traj_time = self.get_clock().now()
         if len(msg.points) < 2:
@@ -110,6 +106,7 @@ class RRTTracker(Node):
                          kappa=np.array([pt.kappa for pt in msg.points]),
                          v=np.array([pt.v for pt in msg.points]))
 
+    # Change the tracking status and log it only when it changes.
     def set_status(self, status):
         if status != self.status:
             if status == 'tracking':
@@ -118,11 +115,13 @@ class RRTTracker(Node):
                 self.get_logger().warn(f'{status}: stopping')
             self.status = status
 
+    # Set the status, reset the speed command and publish a stop command.
     def stop(self, status):
         self.set_status(status)
         self.speed_cmd = 0.0
         self.publish(0.0, 0.0)
 
+    # One control cycle: find the nearest trajectory point, compute steering with the chosen controller, and publish.
     def step(self):
         now = self.get_clock().now()
         if self.traj is None or self.traj_time is None or \
@@ -162,6 +161,7 @@ class RRTTracker(Node):
         self.publish(self.speed_cmd, steering)
         self.publish_goal(frame, gx, gy)
 
+    # Return (curvature, preview point) from rear-wheel feedback on the lateral and heading errors.
     def rear_wheel_feedback(self, tr, i, x, y, yaw):
         psi = tr['psi'][i]
         e = -math.sin(psi) * (x - tr['xy'][i, 0]) + math.cos(psi) * (y - tr['xy'][i, 1])
@@ -175,6 +175,7 @@ class RRTTracker(Node):
         curvature = kappa * math.cos(e_psi) / max(1.0 - kappa * e, 0.1) - k_e * e * sinc - k_psi * e_psi
         return curvature, tr['xy'][j]
 
+    # Return (curvature, goal point) from pure pursuit toward a speed-dependent lookahead point.
     def pure_pursuit(self, tr, i, x, y, yaw):
         xy, s = tr['xy'], tr['s']
         ld = clamp(self.p('lookahead_min') + self.p('lookahead_gain') * self.speed_cmd,
@@ -191,6 +192,7 @@ class RRTTracker(Node):
         d2 = dx * dx + dy * dy
         return (2.0 * local_y / d2 if d2 > 1e-6 else 0.0), (gx, gy)
 
+    # Publish a drive command with the given speed and steering angle.
     def publish(self, speed, steering):
         msg = AckermannDriveStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -199,6 +201,7 @@ class RRTTracker(Node):
         msg.drive.steering_angle = float(steering)
         self.drive_pub.publish(msg)
 
+    # Publish the tracked goal point as an RViz marker.
     def publish_goal(self, frame, x, y):
         m = Marker()
         m.header.frame_id = frame
@@ -211,6 +214,7 @@ class RRTTracker(Node):
         self.goal_pub.publish(m)
 
 
+# Start the node, spin until Ctrl+C, and leave the car stopped.
 def main():
     rclpy.init()
     try:

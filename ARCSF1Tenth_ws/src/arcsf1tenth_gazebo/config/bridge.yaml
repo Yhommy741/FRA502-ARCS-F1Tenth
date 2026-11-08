@@ -1,9 +1,5 @@
-# ros_gz_bridge topics for the F1Tenth simulation.
-# The bridge runs in the robot namespace (launch arg, default arcsf1tenth):
-# relative ROS names become /<namespace>/...
-
-# ---------- Gazebo -> ROS ----------
-- ros_topic_name: /clock         # global: every node uses it for sim time
+# Gazebo -> ROS
+- ros_topic_name: /clock
   gz_topic_name: clock
   ros_type_name: rosgraph_msgs/msg/Clock
   gz_type_name: gz.msgs.Clock
@@ -15,28 +11,25 @@
   gz_type_name: gz.msgs.Model
   direction: GZ_TO_ROS
 
-# Ground-truth pose of base_footprint in the world frame (for evaluation only)
 - ros_topic_name: ground_truth/odometry
   gz_topic_name: ground_truth/odometry
   ros_type_name: nav_msgs/msg/Odometry
   gz_type_name: gz.msgs.Odometry
   direction: GZ_TO_ROS
 
-# Raw simulator IMU; gazebo_imu.py republishes it as imu (frame_id + covariances)
 - ros_topic_name: gazebo/imu
   gz_topic_name: imu
   ros_type_name: sensor_msgs/msg/Imu
   gz_type_name: gz.msgs.IMU
   direction: GZ_TO_ROS
 
-# Raw simulator lidar; gazebo_lidar.py republishes it as scan (frame_id)
 - ros_topic_name: gazebo/scan
   gz_topic_name: scan
   ros_type_name: sensor_msgs/msg/LaserScan
   gz_type_name: gz.msgs.LaserScan
   direction: GZ_TO_ROS
 
-# ---------- ROS -> Gazebo ----------
+# ROS -> Gazebo
 - ros_topic_name: steer_left_cmd
   gz_topic_name: steer_left_cmd
   ros_type_name: std_msgs/msg/Float64

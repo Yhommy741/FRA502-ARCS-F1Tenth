@@ -1,13 +1,4 @@
 #!/usr/bin/python3
-"""Convert a 2D occupancy map (ROS map_server .yaml + image) into a Gazebo world.
-
-Occupied pixels are traced into outlines, simplified into straight segments, and
-every segment becomes a thin box wall. The world uses the same x/y frame as the
-map, so centerline/raceline CSVs made for the map line up with the walls.
-
-Usage:
-    map_to_world.py <map.yaml> <world.sdf> [--wall-height 0.5] [--simplify 1.0] ...
-"""
 
 import argparse
 import math
@@ -89,8 +80,8 @@ WALL_TEMPLATE = """        <collision name="wall_{i}_collision">
         </visual>"""
 
 
+# Return (mask, resolution, origin), where mask is 255 for occupied pixels.
 def load_occupied_mask(map_yaml, unknown_is_wall=False):
-    """Return (mask, resolution, origin) where mask is 255 for occupied pixels."""
     with open(map_yaml) as f:
         meta = yaml.safe_load(f)
 
@@ -115,8 +106,8 @@ def load_occupied_mask(map_yaml, unknown_is_wall=False):
     return mask, float(meta['resolution']), meta['origin']
 
 
+# Trace the occupied regions and return their outlines as pixel line segments.
 def extract_segments(mask, simplify_px, min_area_px):
-    """Trace occupied regions and return their outlines as pixel line segments."""
     # Remove single-pixel noise before tracing
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
 
@@ -134,14 +125,15 @@ def extract_segments(mask, simplify_px, min_area_px):
     return segments
 
 
+# Convert a pixel (col, row) to map frame (x, y), with image row 0 at the top.
 def pixel_to_world(px, height, resolution, origin):
-    """Pixel (col, row) -> map frame (x, y). Image row 0 is the top of the map."""
     col, row = px
     x = origin[0] + (col + 0.5) * resolution
     y = origin[1] + (height - row - 0.5) * resolution
     return x, y
 
 
+# Convert a map image into a Gazebo world with wall segments.
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('map_yaml', help='map_server yaml file')
