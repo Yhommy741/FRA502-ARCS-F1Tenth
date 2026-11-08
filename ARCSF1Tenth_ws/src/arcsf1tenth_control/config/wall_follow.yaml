@@ -3,8 +3,8 @@
     # Wall
     side: left
     desired_distance: 1.1       # [m]
-    lookahead: 0.6              # [m]
-    beam_angle: 1.3317          # [rad]
+    lookahead: 0.7              # [m]
+    beam_angle: 0.6             # [rad]
     beam_window: 0.035          # [rad]
 
     # PID
@@ -14,8 +14,8 @@
     integral_limit: 0.5         # [m s]
 
     # Speed
-    speed_max: 0.8              # [m/s]
-    speed_min: 0.4              # [m/s]
+    speed_max: 2.0              # [m/s]
+    speed_min: 0.5              # [m/s]
     front_slow_distance: 3.0    # [m]
     front_stop_distance: 0.4    # [m]
     front_half_angle: 0.17      # [rad]

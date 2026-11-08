@@ -5,6 +5,26 @@ wheel/IMU odometry fused by a robot_localization EKF, lidar mapping (Cartographe
 raceline generation, wall following, pure pursuit, click-to-place obstacles and Frenet optimal
 obstacle avoidance. A real-car bringup template uses the same interfaces.
 
+## Demo videos
+
+### Mapping
+
+Mapping a track with Cartographer (`slam:=mapping`) and saving the map.
+
+<video src="videos/mapping.mp4" controls width="100%"></video>
+
+### Raceline generation
+
+Generating the centerline and minimum-curvature raceline from a saved map.
+
+<video src="videos/generate_raceline.mp4" controls width="100%"></video>
+
+### Frenet optimal obstacle avoidance
+
+`yhom_controller` driving around obstacles placed in Gazebo.
+
+<video src="videos/frenet_demo.mp4" controls width="100%"></video>
+
 ## Packages (`ARCSF1Tenth_ws/src`)
 
 | Package | Contents |
@@ -131,6 +151,9 @@ ros2 launch arcsf1tenth_bringup yhom_controller.launch.py track:=<map_name>   # 
 Run only one controller (or the keyboard teleop) at a time: they all publish `drive`.
 
 ### yhom: obstacle avoidance
+
+Demo: [Frenet optimal obstacle avoidance](#frenet-optimal-obstacle-avoidance). Algorithm: [FRENET.md](FRENET.md).
+
 ```
 centerline CSV + map ─► frenet_node ─────── global_trajectory, frenet/state      (shared)
 scan + map ──────────► obstacle_detector ── obstacles (Frenet s/d extent)         (shared)
@@ -214,6 +237,9 @@ In both, the EKF (`odom -> base_footprint`) gives the motion and the localizer p
 Cartographer reads `scan/slam` (`scan_for_slam.py`: no-return beams kept as free space).
 
 ### 1. Build a map
+
+Demo: [Mapping](#mapping).
+
 ```bash
 ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=mapping
 ros2 run arcsf1tenth_teleop keyboard.py
@@ -251,6 +277,9 @@ one, otherwise the original `map.yaml`, and picks the start pose for you
 (`0 0 0` for the Cartographer map, `track.yaml` start_pose for the original map).
 
 ### Generate from a map
+
+Demo: [Raceline generation](#raceline-generation).
+
 ```bash
 ros2 run arcsf1tenth_planning generate_raceline.py <map_name> --show
 ```
