@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Trajectory.msg"
   "msg/Obstacle.msg"
   "msg/ObstacleArray.msg"
+  "srv/PlanAvoidance.srv"
   DEPENDENCIES std_msgs
 )
 

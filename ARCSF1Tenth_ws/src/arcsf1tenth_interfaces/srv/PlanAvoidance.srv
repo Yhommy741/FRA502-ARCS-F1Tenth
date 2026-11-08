@@ -1,0 +1,20 @@
+# Ask the kinodynamic RRT (non_rrt_node) for a detour around obstacles that block the global path.
+std_msgs/Header header      # frame_id = map frame, stamp = time of the car state
+float64 x                   # [m] car rear axle, map frame
+float64 y                   # [m]
+float64 yaw                 # [rad]
+float64 speed               # [m/s]
+float64 yaw_rate            # [rad/s] (current steering is estimated from it)
+uint32 path_index           # nearest global path point of the car
+uint32 blocked              # global path points from path_index to the first blocked pose
+float64[] obstacle_x        # [m] obstacle points the caller judged with (map frame)
+float64[] obstacle_y
+---
+bool ok
+string reason               # why no path was found (ok = false)
+Trajectory trajectory       # lead-in + RRT path + merge back onto the global path, with speeds
+uint32 end_index            # trajectory index where the RRT part ends (the merge starts)
+float64 margin              # [m] obstacle margin the path keeps (smaller when it had to escape)
+float64 plan_time           # [s]
+uint32 nodes
+uint32 iterations

@@ -1,24 +1,47 @@
-/**/non_rrt_planner:
-  ros__parameters:
-    rate: 10.0                  # [Hz]
-    odom_topic: odometry/estimated
+# non_controller.launch.py: non_obstacle_detector -> non_state_machine <-> non_rrt_node -> pure_pursuit
+# (pure_pursuit uses arcsf1tenth_control/config/pure_pursuit.yaml, shared with yhom_controller)
 
-    # Obstacle detection
-    detect_wall_margin: 0.3     # [m]
-    detect_range_gain: 0.035    # [m/m]
+# Shared by all nodes that load this file
+/**:
+  ros__parameters:
+    rate: 10.0                  # [Hz] non_state_machine cycle (non_rrt_node uses it for the lead-in)
+    obstacle_margin: 0.3        # [m] car edge to obstacle point (0.2 + room for pure pursuit corner cutting)
+
+/**/non_obstacle_detector:
+  ros__parameters:
     max_range: 6.0              # [m]
-    neighbor_radius: 0.2        # [m]
-    min_neighbors: 2            # [const]
+    detect_wall_margin: 0.3     # [m]
+    detect_range_gain: 0.035    # [m/m] 0 = fixed margin (like obstacle_detector)
+    cluster_gap: 0.3            # [m]
+    min_points: 3               # [const]
+    max_size: 2.0               # [m]
+    track_filter: true
+    track_margin: 0.1           # [m]
+
+/**/non_state_machine:
+  ros__parameters:
+    odom_topic: odometry/estimated
     obstacle_timeout: 0.5       # [s]
 
-    # Collision check
-    wall_margin: 0.05           # [m]
-    obstacle_margin: 0.2        # [m]
-    escape_margin: 0.05         # [m]
-
-    # Trigger and goal
+    # Trigger
     check_distance: 3.0         # [m]
     check_time: 1.5             # [s]
+
+    # Following the plan
+    replan_distance: 0.4        # [m]
+    stop_distance: 0.5          # [m]
+    brake_decel: 2.0            # [m/s^2]
+    global_ahead: 12.0          # [m]
+    global_behind: 1.0          # [m]
+    request_timeout: 1.0        # [s]
+
+/**/non_rrt_node:
+  ros__parameters:
+    # Collision check
+    wall_margin: 0.05           # [m]
+    escape_margin: 0.05         # [m]
+
+    # Goal and sampling
     goal_after_obstacle: 2.0    # [m]
     min_goal_distance: 4.0      # [m]
     max_goal_distance: 10.0     # [m]
@@ -27,10 +50,10 @@
     # Kinodynamic RRT
     steer_margin: 0.9           # [const]
     steer_rate_margin: 0.7      # [const]
-    edge_length: 0.5            # [m]
+    edge_length: 1.5            # [m]
     integration_step: 0.05      # [m]
     n_controls: 7               # [const]
-    goal_bias: 0.3              # [const]
+    goal_bias: 0.1              # [const]
     goal_tolerance: 0.4         # [m]
     goal_depth: 1.0             # [m]
     goal_yaw_tolerance: 0.4     # [rad]
@@ -42,33 +65,9 @@
     refine_iterations: 100      # [const]
     time_budget: 0.08           # [s]
 
-    # Following the plan
-    replan_distance: 0.4        # [m]
+    # Detour
     merge_length: 3.0           # [m]
     avoid_speed_max: 2.0        # [m/s]
     min_plan_speed: 1.0         # [m/s]
     max_lateral_accel: 4.0      # [m/s^2]
-    stop_distance: 0.5          # [m]
-    brake_decel: 2.0            # [m/s^2]
-    global_ahead: 12.0          # [m]
-    global_behind: 1.0          # [m]
     publish_tree: true
-
-/**/non_rrt_tracker:
-  ros__parameters:
-    rate: 50.0                  # [Hz]
-    trajectory_timeout: 0.5     # [s]
-    controller: rear_wheel_feedback
-
-    # Rear wheel feedback
-    settle_time: 0.5            # [s]
-    settle_distance_min: 0.6    # [m]
-    preview_time: 0.1           # [s]
-
-    # Pure pursuit
-    lookahead_min: 0.6          # [m]
-    lookahead_max: 1.8          # [m]
-    lookahead_gain: 0.35        # [s]
-    speed_scale: 1.0            # [const]
-    speed_min: 0.3              # [m/s]
-    max_tracking_error: 1.0     # [m]

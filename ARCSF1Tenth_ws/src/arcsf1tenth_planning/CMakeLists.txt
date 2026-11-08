@@ -32,8 +32,8 @@ install(PROGRAMS
   scripts/frenet_node.py
   scripts/obstacle_detector.py
   scripts/yhom_local_planner.py
-  scripts/non_rrt_planner.py
-  scripts/non_rrt_tracker.py
+  scripts/non_obstacle_detector.py
+  scripts/non_rrt_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

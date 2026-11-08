@@ -5,6 +5,5 @@ log/
 __pycache__/
 .vscode/
 
-# local tests (not pushed)
 ARCSF1Tenth_ws/src/arcsf1tenth_planning/test/
 .pytest_cache/

@@ -19,6 +19,9 @@
   <depend>visualization_msgs</depend>
   <depend>std_srvs</depend>
   <depend>tf2_ros</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <exec_depend>sensor_msgs_py</exec_depend>
   <exec_depend>gz_tools_vendor</exec_depend>
   <exec_depend>arcsf1tenth_planning</exec_depend>
   

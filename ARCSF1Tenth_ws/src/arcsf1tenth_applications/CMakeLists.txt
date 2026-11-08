@@ -30,6 +30,7 @@ install(PROGRAMS
   scripts/dummy_script.py
   scripts/obstacle_spawner.py
   scripts/yhom_state_machine.py
+  scripts/non_state_machine.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -155,6 +155,15 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Durability Policy: Volatile
+    - Class: rviz_default_plugins/Marker
+      Name: RRT tree (non)
+      Enabled: true
+      Topic:
+        Value: /arcsf1tenth/rrt/tree
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: world

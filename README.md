@@ -32,12 +32,12 @@ Generating the centerline and minimum-curvature raceline from a saved map.
 | `arcsf1tenth_description` | URDF/meshes, `config/vehicle.yaml` (geometry, limits, footprint), `config/sensors.yaml` (IMU BNO055, lidar RPLidar C1) |
 | `arcsf1tenth_gazebo` | Gazebo model plugins, bridge, simulated drivers: `gazebo_drive`, `gazebo_imu`, `gazebo_lidar`, `gazebo_wheel_odometry`, `map_to_world.py` |
 | `arcsf1tenth_localization` | `imu_filter.py` (gyro bias calibration + ZUPT), `save_map.py`, `scan_for_slam.py`, `localization_error.py`, `config/ekf.yaml` (robot_localization), `config/imu_filter.yaml`, `config/cartographer_2d.lua` (mapping), `config/amcl.yaml` (localization) |
-| `arcsf1tenth_planning` | Offline: `generate_raceline.py`, `show_raceline.py`. Online (shared): `frenet_node.py` (Frenet frame, track widths), `obstacle_detector.py`. yhom: `yhom_local_planner.py` (Frenet optimal). non: `non_rrt_planner.py` (kinodynamic RRT), `non_rrt_tracker.py`. Libraries `frenet/` (`frenet_path.py`, `frenet_optimal.py`), `rrt/` (`kinodynamic_rrt.py`, `collision.py`, `global_path.py`), `utils/` (`conversions.py`, `plotting.py`, `tracks.py`); `config/frenet.yaml`, `config/yhom_planner.yaml`, `config/non_rrt.yaml` |
-| `arcsf1tenth_interfaces` | Messages: `FrenetState`, `Waypoint`, `Trajectory`, `Obstacle`, `ObstacleArray` |
+| `arcsf1tenth_planning` | Offline: `generate_raceline.py`, `show_raceline.py`. Online (shared): `frenet_node.py` (Frenet frame, track widths), `obstacle_detector.py`. yhom: `yhom_local_planner.py` (Frenet optimal). non: `non_obstacle_detector.py`, `non_rrt_node.py` (kinodynamic RRT service). Libraries `frenet/` (`frenet_path.py`, `frenet_optimal.py`), `rrt/` (`kinodynamic_rrt.py`, `avoidance.py`, `obstacles.py`, `collision.py`, `global_path.py`), `utils/` (`conversions.py`, `plotting.py`, `tracks.py`); `config/frenet.yaml`, `config/yhom_planner.yaml`, `config/non_rrt.yaml` |
+| `arcsf1tenth_interfaces` | Messages: `FrenetState`, `Waypoint`, `Trajectory`, `Obstacle`, `ObstacleArray`. Services: `PlanAvoidance` (non_rrt_node) |
 | `arcsf1tenth_teleop` | `keyboard.py` |
 | `arcsf1tenth_tracks` | Tracks: `f1tenth_tracks/` (F1TENTH tracks), `lab_tracks/` (our own) |
 | `arcsf1tenth_bringup` | Launch files and RViz configs |
-| `arcsf1tenth_applications` | `obstacle_spawner.py` (click in RViz to add/remove obstacles in Gazebo), `yhom_state_machine.py` (GLOBAL / AVOID / BLOCKED for yhom_controller); `config/yhom_state_machine.yaml` |
+| `arcsf1tenth_applications` | `obstacle_spawner.py` (click in RViz to add/remove obstacles in Gazebo), `yhom_state_machine.py` (GLOBAL / AVOID / BLOCKED for yhom_controller), `non_state_machine.py` (same for non_controller); `config/yhom_state_machine.yaml` |
 | `arcsf1tenth_control` | `wall_follow.py` (PID wall follower), `pure_pursuit.py` (raceline follower), `config/` |
 
 ## Install
@@ -140,7 +140,7 @@ without touching the other one:
 | Launch | Owner | Now |
 |---|---|---|
 | `yhom_controller.launch.py` | yhom | state machine: centerline, or Frenet optimal path around obstacles; pure pursuit |
-| `non_controller.launch.py` | non | centerline, or kinodynamic RRT path around obstacles ; own tracker (rear wheel feedback) |
+| `non_controller.launch.py` | non | state machine: centerline, or kinodynamic RRT path around obstacles; pure pursuit |
 
 Needs a centerline for the track (see [Raceline](#raceline)) and `slam:=localization`. In a second
 terminal, with the simulation running:
@@ -191,28 +191,30 @@ raceline as the global path.
 ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=localization
 ros2 launch arcsf1tenth_bringup non_controller.launch.py track:=<map_name>
 ```
-Self-contained: uses none of the `yhom`/shared nodes (own detection, planner, tracker).
+Algorithm: [KINODYNAMIC_RRT.md](KINODYNAMIC_RRT.md). Own obstacle detection and planner, shared controller (`pure_pursuit`).
 ```
-map + scan + TF + odometry + centerline CSV ─► non_rrt_planner ─ rrt/trajectory ─► non_rrt_tracker ─► drive
+scan + map ──────► non_obstacle_detector ─ rrt/obstacle_points (lidar points not in the map)
+centerline CSV ──► non_state_machine ───── rrt/trajectory ─► pure_pursuit ─► drive
+                        ⇅ rrt/plan service (only when the path ahead is blocked)
+                   non_rrt_node ────────── kinodynamic RRT detour
 ```
-- **Obstacles**: lidar points further than `detect_wall_margin` (0.3 m) from every wall of the saved map,
-  isolated points dropped. Collision check: car outline as 3 circles, `wall_margin` to walls,
-  `obstacle_margin` to obstacle points.
-- **Kinodynamic RRT** (`kinodynamic_rrt.py`): state (x, y, yaw, steering), kinematic bicycle model,
+- **Obstacles** (`non_obstacle_detector`): lidar points further than `detect_wall_margin` (0.3 m) +
+  0.035 x range from every wall of the saved map, placed with the pose at the scan time. Same cluster
+  rules as `obstacle_detector` (≥ 3 points, ≤ 2 m wide, inside the track), published as raw points.
+- **Kinodynamic RRT** (`non_rrt_node`): state (x, y, yaw, steering), kinematic bicycle model,
   forward only. Edges are 0.5 m motion primitives: steering commands on a grid, reachable within the
-  servo slew rate (`max_steering_speed` x `steer_rate_margin`) at the planning speed, so every path
-  is drivable. Samples near the centerline, heading-aware nearest node, dead-end nodes retired,
-  goal = a gate on the centerline past the obstacle(s) with a clear runway. ~20-40 ms per plan.
-- **Modes** (`rrt/state`): `GLOBAL` follow the centerline; `AVOID` follow the committed RRT path
-  until it merges back (replan if a new obstacle blocks it or the car is > 0.4 m off it);
-  `BLOCKED` no path: brake to a stop 0.5 m before the obstacle and keep trying.
-- **Tracker** (`non_rrt_tracker`): rear wheel feedback (path curvature feedforward + lateral/heading
-  feedback, speed-scheduled gains), or `controller:=pure_pursuit` for comparison.
+  servo slew rate at the planning speed, so every path is drivable. Samples near the centerline,
+  heading-aware nearest node, dead-end nodes retired, goal = a gate on the centerline past the
+  obstacle(s) with a clear runway. ~20-40 ms per plan.
+- **State machine** (`non_state_machine`, 10 Hz, `rrt/state`): `GLOBAL` follow the centerline;
+  `AVOID` follow the committed RRT path until it merges back (replan if a new obstacle blocks it or
+  the car is > 0.4 m off it); `BLOCKED` no path: brake to a stop 0.5 m before the obstacle and keep trying.
 
-RViz (add as Marker / Path): `rrt/tree` (search tree), `rrt/path`, `rrt/goal`, `rrt/obstacle_points`,
-`rrt/state_marker`. Arguments: `line:=centerline|raceline`, `speed_scale:=<fraction>`.
-Code: `arcsf1tenth_planning/scripts/non_rrt_planner.py`, `non_rrt_tracker.py`, library
-`arcsf1tenth_planning/arcsf1tenth_planning/rrt/`. Tuning: `arcsf1tenth_planning/config/non_rrt.yaml` (commented).
+RViz: `rrt/obstacle_points` (PointCloud2), `rrt/tree`, `rrt/goal`, `rrt/state_marker` (Marker), `rrt/path` (Path).
+Arguments: `line:=centerline|raceline`, `speed_scale:=<fraction>`.
+Code: `arcsf1tenth_planning/scripts/non_obstacle_detector.py`, `non_rrt_node.py`,
+`arcsf1tenth_applications/scripts/non_state_machine.py`, library `arcsf1tenth_planning/arcsf1tenth_planning/rrt/`.
+Tuning: `arcsf1tenth_planning/config/non_rrt.yaml` (all three nodes), `arcsf1tenth_control/config/pure_pursuit.yaml`.
 
 ### Pure pursuit
 By default it follows the centerline, `<map_name>/maps/sim/cartographer_map_centerline.csv`

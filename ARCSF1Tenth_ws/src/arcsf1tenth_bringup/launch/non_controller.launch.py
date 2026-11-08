@@ -1,21 +1,23 @@
-"""non's controller: global path + kinodynamic RRT obstacle avoidance + own tracker.
+"""non's controller: global path + kinodynamic RRT obstacle avoidance + the shared pure_pursuit.
 
 Run on top of the simulation launch, in a second terminal:
   ros2 launch arcsf1tenth_bringup simulation.launch.py track:=<map_name> slam:=localization
   ros2 launch arcsf1tenth_bringup non_controller.launch.py track:=<map_name>
 
-    non_rrt_planner  map + scan + TF + odometry + global path CSV -> rrt/trajectory
-                     (obstacle detection, GLOBAL | AVOID | BLOCKED, kinodynamic RRT)
-    non_rrt_tracker  rrt/trajectory -> drive (rear wheel feedback, or controller:=pure_pursuit)
+    non_obstacle_detector  map + scan + TF -> rrt/obstacle_points (lidar points not in the saved map)
+    non_state_machine      obstacle points + TF + odometry + global path -> rrt/trajectory
+                           (GLOBAL | AVOID | BLOCKED; asks non_rrt_node for a detour when blocked)
+    non_rrt_node           rrt/plan service: kinodynamic RRT detour around the obstacles
+    pure_pursuit           rrt/trajectory -> drive (same controller as yhom_controller)
 
-Self-contained: uses none of the other controllers' nodes (yhom_controller has its own).
-Each group member has an own controller launch (non_controller / yhom_controller). Run only one
-controller at a time: all of them publish <namespace>/drive.
+Each group member has an own avoidance (non_controller / yhom_controller), the controller is shared.
+Run only one controller launch at a time: both publish <namespace>/drive.
 Global path: <track>/maps/sim/cartographer_map_<line>.csv (generate_raceline.py), map frame.
 Needs slam:=localization: obstacles are lidar points that are not in the saved map.
-Tuning: arcsf1tenth_planning/config/non_rrt.yaml. Code: arcsf1tenth_planning/scripts/non_rrt_*.py,
-arcsf1tenth_planning/arcsf1tenth_planning/rrt/ (kinodynamic RRT library, no ROS).
-RViz: add rrt/tree, rrt/path, rrt/goal, rrt/obstacle_points, rrt/state_marker (Marker / Path).
+Tuning: arcsf1tenth_planning/config/non_rrt.yaml (pure_pursuit: arcsf1tenth_control/config/pure_pursuit.yaml).
+Code: arcsf1tenth_planning/scripts/non_*.py, arcsf1tenth_applications/scripts/non_state_machine.py,
+arcsf1tenth_planning/arcsf1tenth_planning/rrt/ (detection + kinodynamic RRT library, no ROS).
+RViz: add rrt/obstacle_points (PointCloud2), rrt/tree, rrt/goal, rrt/state_marker (Marker), rrt/path (Path).
 """
 
 import glob
@@ -56,20 +58,33 @@ def launch_setup(context):
 
     vehicle = os.path.join(get_package_share_directory('arcsf1tenth_description'), 'config', 'vehicle.yaml')
     config = os.path.join(get_package_share_directory('arcsf1tenth_planning'), 'config', 'non_rrt.yaml')
+    pp_config = os.path.join(get_package_share_directory('arcsf1tenth_control'), 'config', 'pure_pursuit.yaml')
     frames = {'map_frame': f'{prefix}map', 'base_frame': f'{prefix}base_footprint'}
     common = {'use_sim_time': use_sim_time}
-    tracker = {**common, 'base_frame': frames['base_frame']}
+    own = {**common, 'global_path': global_path}
+
+    # shared controller, following this pipeline's trajectory; speed_min low so the BLOCKED braking
+    # profile is followed down to the stop (pure_pursuit raises any speed above 0.05 m/s to speed_min)
+    pp_overrides = {**common, 'trajectory_topic': 'rrt/trajectory', 'raceline_frame': frames['map_frame'],
+                    'base_frame': frames['base_frame'], 'speed_min': 0.1}
     speed_scale = LaunchConfiguration('speed_scale').perform(context)
     if speed_scale:
-        tracker['speed_scale'] = float(speed_scale)
+        pp_overrides['speed_scale'] = float(speed_scale)
+
+    def node(package, executable, name, params):
+        return Node(package=package, executable=executable, name=name, namespace=namespace,
+                    output='screen', parameters=params)
 
     return [
         LogInfo(msg=f'non_controller (kinodynamic RRT): global path {global_path}'),
-        Node(package='arcsf1tenth_planning', executable='non_rrt_planner.py', name='non_rrt_planner',
-             namespace=namespace, output='screen',
-             parameters=[vehicle, config, {**common, **frames, 'global_path': global_path}]),
-        Node(package='arcsf1tenth_planning', executable='non_rrt_tracker.py', name='non_rrt_tracker',
-             namespace=namespace, output='screen', parameters=[vehicle, config, tracker]),
+        node('arcsf1tenth_planning', 'non_obstacle_detector.py', 'non_obstacle_detector',
+             [config, {**own, 'map_frame': frames['map_frame']}]),
+        node('arcsf1tenth_planning', 'non_rrt_node.py', 'non_rrt_node',
+             [vehicle, config, {**own, 'map_frame': frames['map_frame']}]),
+        node('arcsf1tenth_applications', 'non_state_machine.py', 'non_state_machine',
+             [vehicle, config, {**own, **frames}]),
+        node('arcsf1tenth_control', 'pure_pursuit.py', 'pure_pursuit',
+             [vehicle, pp_config, pp_overrides]),
     ]
 
 
@@ -80,7 +95,7 @@ def generate_launch_description():
         DeclareLaunchArgument('track', default_value='',
                               description='Track folder in arcsf1tenth_tracks (needs its cartographer_map_<line>.csv)'),
         DeclareLaunchArgument('line', default_value='centerline', description='Global path: centerline | raceline'),
-        DeclareLaunchArgument('speed_scale', default_value='', description='Fraction of the path speed (default: non_rrt.yaml)'),
+        DeclareLaunchArgument('speed_scale', default_value='', description='Fraction of the path speed (default: pure_pursuit.yaml)'),
         DeclareLaunchArgument('use_sim_time', default_value='true', description='Use the Gazebo clock'),
         OpaqueFunction(function=launch_setup),
     ])
