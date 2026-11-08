@@ -1,0 +1,24 @@
+/**/yhom_state_machine:
+  ros__parameters:
+    rate: 20.0                  # [Hz]
+
+    # Trigger
+    trigger_distance: 3.0       # [m]
+    trigger_time: 1.5           # [s]
+    corridor_margin: 0.25       # [m]
+
+    # Transitions
+    return_d: 0.15              # [m]
+    min_avoid_time: 1.0         # [s]
+    clear_time: 0.5             # [s]
+    release_distance: 2.0       # [m]
+    timeout: 0.5                # [s]
+
+    # Blocked
+    stop_distance: 1.0          # [m]
+    brake_decel: 2.0            # [m/s^2]
+
+    # Global window
+    global_ahead: 12.0          # [m]
+    global_behind: 1.0          # [m]
+    global_step: 0.1            # [m]

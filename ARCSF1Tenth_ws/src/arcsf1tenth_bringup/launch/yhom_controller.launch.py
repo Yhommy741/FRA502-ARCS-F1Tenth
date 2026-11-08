@@ -64,6 +64,8 @@ def launch_setup(context):
     planning_config = os.path.join(get_package_share_directory('arcsf1tenth_planning'), 'config')
     frenet_config = os.path.join(planning_config, 'frenet.yaml')
     yhom_config = os.path.join(planning_config, 'yhom_planner.yaml')
+    state_machine_config = os.path.join(get_package_share_directory('arcsf1tenth_applications'), 'config',
+                                        'yhom_state_machine.yaml')
     pp_config = os.path.join(get_package_share_directory('arcsf1tenth_control'), 'config', 'pure_pursuit.yaml')
     common = {'use_sim_time': use_sim_time}
 
@@ -85,8 +87,8 @@ def launch_setup(context):
              [frenet_config, {**common, 'map_frame': f'{prefix}map'}]),
         node('arcsf1tenth_planning', 'yhom_local_planner.py', 'yhom_local_planner',
              [vehicle, yhom_config, common]),
-        node('arcsf1tenth_planning', 'yhom_state_machine.py', 'yhom_state_machine',
-             [vehicle, yhom_config, common]),
+        node('arcsf1tenth_applications', 'yhom_state_machine.py', 'yhom_state_machine',
+             [vehicle, state_machine_config, common]),
         node('arcsf1tenth_control', 'pure_pursuit.py', 'pure_pursuit',
              [vehicle, pp_config, pp_overrides]),
     ]
