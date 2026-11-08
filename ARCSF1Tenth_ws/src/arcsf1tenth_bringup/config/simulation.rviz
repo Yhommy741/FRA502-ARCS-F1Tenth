@@ -1,181 +1,453 @@
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 70
     Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 200
   - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
     Name: Views
+    Splitter Ratio: 0.5
 Visualization Manager:
   Class: ""
   Displays:
-    - Class: rviz_default_plugins/Grid
-      Name: Grid
-      Enabled: true
+    - Alpha: 0.5
       Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
       Plane Cell Count: 40
       Reference Frame: <Fixed Frame>
-    - Class: rviz_default_plugins/RobotModel
-      Name: RobotModel
-      Enabled: true
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
       Description Source: Topic
       Description Topic:
-        Value: /arcsf1tenth/robot_description
         Depth: 5
         Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
-      TF Prefix: arcsf1tenth
-      Visual Enabled: true
-      Collision Enabled: false
-      Alpha: 1
-    - Class: rviz_default_plugins/TF
-      Name: TF
+        Value: /arcsf1tenth/robot_description
       Enabled: true
-      Show Names: false
-      Show Axes: true
-      Show Arrows: false
-      Marker Scale: 0.3
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        FL_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        FR_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        Link Tree Style: Links in Alphabetic Order
+        RL_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        RR_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        TFL_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        TFR_wheel:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_footprint:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: arcsf1tenth
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
       Frames:
         All Enabled: false
-        world:
+        arcsf1tenth/FL_wheel:
+          Value: true
+        arcsf1tenth/FR_wheel:
+          Value: true
+        arcsf1tenth/RL_wheel:
+          Value: true
+        arcsf1tenth/RR_wheel:
+          Value: true
+        arcsf1tenth/TFL_wheel:
+          Value: true
+        arcsf1tenth/TFR_wheel:
+          Value: true
+        arcsf1tenth/base_footprint:
+          Value: true
+        arcsf1tenth/base_link:
+          Value: true
+        arcsf1tenth/imu:
+          Value: true
+        arcsf1tenth/lidar:
           Value: true
         arcsf1tenth/map:
           Value: true
         arcsf1tenth/odom:
           Value: true
-        arcsf1tenth/base_footprint:
+        world:
           Value: true
-        arcsf1tenth/lidar:
-          Value: true
-    - Class: rviz_default_plugins/Map
-      Name: SLAM map
+      Marker Scale: 0.30000001192092896
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: false
+      Tree:
+        world:
+          arcsf1tenth/map:
+            arcsf1tenth/odom:
+              arcsf1tenth/base_footprint:
+                arcsf1tenth/base_link:
+                  arcsf1tenth/RL_wheel:
+                    {}
+                  arcsf1tenth/RR_wheel:
+                    {}
+                  arcsf1tenth/TFL_wheel:
+                    arcsf1tenth/FL_wheel:
+                      {}
+                  arcsf1tenth/TFR_wheel:
+                    arcsf1tenth/FR_wheel:
+                      {}
+                  arcsf1tenth/imu:
+                    {}
+                  arcsf1tenth/lidar:
+                    {}
+      Update Interval: 0
+      Value: true
+    - Alpha: 0.699999988079071
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: true
       Enabled: true
+      Name: SLAM map
       Topic:
-        Value: /arcsf1tenth/map
         Depth: 1
+        Durability Policy: Transient Local
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Durability Policy: Transient Local
-      Color Scheme: map
-      Alpha: 0.7
-      Draw Behind: true
-    - Class: rviz_default_plugins/LaserScan
-      Name: Lidar scan
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/scan
+        Value: /arcsf1tenth/map
+      Update Topic:
         Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/map_updates
+      Use Timestamp: false
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/LaserScan
+      Color: 255; 220; 0
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: Lidar scan
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 4
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Durability Policy: Volatile
-      Style: Points
-      Size (Pixels): 4
-      Color Transformer: FlatColor
-      Color: 255; 220; 0
-      Alpha: 1
-      Decay Time: 0
-    - Class: rviz_default_plugins/Odometry
-      Name: Ground truth
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/ground_truth/odometry
-        Depth: 10
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-      Keep: 300
-      Position Tolerance: 0.1
-      Angle Tolerance: 0.1
-      Shape:
-        Value: Arrow
-        Color: 230; 40; 40
-        Alpha: 0.7
-        Shaft Length: 0.2
-        Shaft Radius: 0.01
-        Head Length: 0.06
-        Head Radius: 0.03
+        Value: /arcsf1tenth/scan
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
       Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
         Value: false
-    - Class: rviz_default_plugins/Path
-      Name: Raceline (pure pursuit)
       Enabled: true
+      Keep: 300
+      Name: Ground truth
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 0.699999988079071
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 230; 40; 40
+        Head Length: 0.05999999865889549
+        Head Radius: 0.029999999329447746
+        Shaft Length: 0.20000000298023224
+        Shaft Radius: 0.009999999776482582
+        Value: Arrow
       Topic:
-        Value: /arcsf1tenth/pure_pursuit/raceline
-        Depth: 1
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Durability Policy: Transient Local
-      Line Style: Lines
+        Value: /arcsf1tenth/ground_truth/odometry
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
       Color: 255; 0; 255
-      Alpha: 1
-    - Class: rviz_default_plugins/Marker
-      Name: Lookahead point
       Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Raceline (pure pursuit)
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic:
-        Value: /arcsf1tenth/pure_pursuit/lookahead
-        Depth: 5
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-    - Class: rviz_default_plugins/Path
-      Name: Local path (yhom)
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/yhom/local_path
-        Depth: 5
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-      Color: 255; 170; 0
-      Line Style: Billboards
-      Line Width: 0.05
-      Alpha: 1
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Obstacles (detected)
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/obstacles/markers
-        Depth: 5
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Durability Policy: Volatile
-    - Class: rviz_default_plugins/MarkerArray
-      Name: Track bounds
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/track_bounds
         Depth: 1
-        History Policy: Keep Last
-        Reliability Policy: Reliable
         Durability Policy: Transient Local
-    - Class: rviz_default_plugins/Marker
-      Name: State (yhom)
-      Enabled: true
-      Topic:
-        Value: /arcsf1tenth/yhom/state_marker
-        Depth: 5
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
+        Value: /arcsf1tenth/pure_pursuit/raceline
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Lookahead point
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/pure_pursuit/lookahead
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 170; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.05000000074505806
+      Name: Local path (yhom)
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/yhom/local_path
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Obstacles (detected)
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/obstacles/markers
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Track bounds
+      Namespaces:
+        {}
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/track_bounds
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: State (yhom)
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/yhom/state_marker
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /arcsf1tenth/rrt/path
+      Value: true
+  Enabled: true
   Global Options:
     Background Color: 48; 48; 48
     Fixed Frame: world
     Frame Rate: 30
+  Name: root
   Tools:
     - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
     - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /clicked_point
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
   Views:
     Current:
+      Angle: 0
       Class: rviz_default_plugins/TopDownOrtho
-      Scale: 60
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Scale: 34.49270248413086
+      Target Frame: arcsf1tenth/base_footprint
+      Value: TopDownOrtho (rviz_default_plugins)
       X: 0
       Y: 0
-      Target Frame: arcsf1tenth/base_footprint
+    Saved: ~
 Window Geometry:
-  Width: 1200
-  Height: 800
+  Displays:
+    collapsed: false
+  Height: 653
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000001c90000022ffc0200000002fb000000100044006900730070006c006100790073010000003f0000014e000000cc00fffffffb0000000a005600690065007700730100000193000000db000000a900ffffff000003250000022f00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Views:
+    collapsed: false
+  Width: 1268
+  X: 2364
+  Y: 996

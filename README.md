@@ -25,6 +25,12 @@ Generating the centerline and minimum-curvature raceline from a saved map.
 
 <video src="videos/frenet_demo.mp4" controls width="100%"></video>
 
+### Kinodynamic RRT obstacle avoidance
+
+`non_controller` driving around obstacles placed in Gazebo.
+
+<video src="videos/rrt_demo.mp4" controls width="100%"></video>
+
 ## Packages (`ARCSF1Tenth_ws/src`)
 
 | Package | Contents |
