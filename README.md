@@ -146,6 +146,7 @@ scan + map ──────────► obstacle_detector ── obstacles 
   to a target offset over 3-8 m, then hold), rejects those leaving the track, hitting an obstacle
   (car outline + `obstacle_margin`) or too curvy to steer, picks the cheapest
   (smoothness + offset + clearance + consistency).
+  The full derivation (Frenet frame, quintic candidates, checks, cost) is in [FRENET.md](FRENET.md).
 - **State machine** (`yhom_state_machine`, 20 Hz):
 
   | State | Car follows | Leaves when |
@@ -156,7 +157,8 @@ scan + map ──────────► obstacle_detector ── obstacles 
 
 RViz shows the state above the car, the local path (orange), the detected obstacles (red) and the
 track bounds (blue). Topics: `/arcsf1tenth/yhom/state`, `yhom/trajectory`, `yhom/local_trajectory`.
-Tuning: `arcsf1tenth_planning/config/yhom_planner.yaml` (planner and state machine, commented),
+Tuning: `arcsf1tenth_planning/config/yhom_planner.yaml` (planner),
+`arcsf1tenth_applications/config/yhom_state_machine.yaml` (state machine),
 `arcsf1tenth_planning/config/frenet.yaml` (Frenet frame, obstacle detection),
 `arcsf1tenth_control/config/pure_pursuit.yaml` (path following). Argument `line:=raceline` uses the
 raceline as the global path.
